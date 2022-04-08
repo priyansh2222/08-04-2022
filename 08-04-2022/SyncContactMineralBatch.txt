@@ -1,0 +1,222 @@
+/*
+Name: SyncContactMineralBatch 
+Date: 03 March 2022
+Description: The batch syncs or deactivates users in Mineral system based on Contact in SF system. 
+*/
+
+public with sharing class SyncContactMineralBatch implements Database.Batchable<Sobject>, Database.AllowsCallouts {  
+    public String accessToken;
+    public Set<Id> contactIdSet;
+    public List<P3_AGIA_Mineral_Error_Log__c> errorLogs;
+    public Contact contactRec;
+    public static  P3_AGIA_Mineral_Integration__c csObj = P3_AGIA_Mineral_Integration__c.getAll().containsKey('AGIAMineralCredential') ? P3_AGIA_Mineral_Integration__c.getAll().get('AGIAMineralCredential') : NULL;
+    public SyncContactMineralBatch(){        
+        contactIdSet = new Set<Id>();
+        errorLogs = new List<P3_AGIA_Mineral_Error_Log__c>();
+        contactRec = new Contact();
+    }
+    
+    public SyncContactMineralBatch(Set<Id> contactIdSet){       
+        if(contactIdSet.size()>0)
+            this.contactIdSet = contactIdSet;
+        else
+            this.contactIdSet = new Set<Id>();
+        errorLogs = new List<P3_AGIA_Mineral_Error_Log__c>();
+        contactRec = new Contact();
+    }
+    
+    public Database.QueryLocator start(Database.BatchableContext bc){
+        if(SyncAccountMineralBatch.CLIENTID != NULL && SyncAccountMineralBatch.CLIENTSECRET != NULL && SyncAccountMineralBatch.ENDPOINT != NULL && SyncAccountMineralBatch.USERNAME != NULL && SyncAccountMineralBatch.PASSWORD != NULL){
+            if(this.contactIdSet == NULL || this.contactIdSet.size() == 0)
+                return Database.getQueryLocator([SELECT Id, Email,Account.UST_ID__c, Title, P3_Mineral_User_Id__c, Account.P3_Mineral_Company_Id__c, Department, Phone, P3_Sync_With_Mineral__c, FirstName, LastName, Contact_Type__c, Account.Name, ThinkHR_User__c, Status_All__c, Account.Status_All__c, CreatedDate, LastModifiedDate FROM Contact WHERE AccountId != NULL AND P3_Sync_With_Mineral__c = TRUE AND Account.P3_Mineral_Company_Id__c != NULL AND (CreatedDate>=Yesterday OR LastModifiedDate >= Yesterday)]); 
+            else
+                return Database.getQueryLocator([SELECT Id, Email,Account.UST_ID__c, Title, P3_Mineral_User_Id__c, Account.P3_Mineral_Company_Id__c, Department, Phone, P3_Sync_With_Mineral__c, FirstName, LastName, Contact_Type__c, Account.Name, ThinkHR_User__c, Status_All__c, Account.Status_All__c, CreatedDate, LastModifiedDate FROM Contact WHERE AccountId != NULL AND P3_Sync_With_Mineral__c = TRUE AND Account.P3_Mineral_Company_Id__c != NULL AND Id IN: contactIdSet]);
+        }else{
+            return NULL;
+        }
+    }
+    public void execute(Database.BatchableContext bc,List<Contact> listOfContacts){
+        errorLogs = new List<P3_AGIA_Mineral_Error_Log__c>();
+        contactRec = new Contact();
+        if(listOfContacts != NULL && listOfContacts.size()>0){            
+            this.accessToken =  SyncAccountMineralBatch.getAccessTokenMineral();
+            Contact c = listOfContacts[0];
+            try{
+                if(c.P3_Mineral_User_Id__c != NULL && ((c.Account.Status_All__c != 'Active' && c.Account.Status_All__c != 'RFQ' ) || c.Contact_Type__c == 'Inactive Still at Org' || c.Contact_Type__c == 'Inactive Contact' || c.ThinkHR_User__c == FALSE)) {
+                    //Deactivate contact 
+                    setUserStatus(c.P3_Mineral_User_Id__c, FALSE, c.Id);
+                } else if(c.ThinkHR_User__c == TRUE && (c.Status_All__c == 'Active' || c.Status_All__c == 'RFQ') && (c.Contact_Type__c == 'Executive' || c.Contact_Type__c == 'Primary' || c.Contact_Type__c == 'Secondary' || c.Contact_Type__c == 'Administrator' || c.Contact_Type__c == 'ThinkHR Only Contact')){
+                    //Create contact
+                    if(c.P3_Mineral_User_Id__c == NULL)
+                        createUserMineral(c);
+                    else{
+                        setUserStatus(c.P3_Mineral_User_Id__c, TRUE, c.Id);
+                        updateUserDetails(c);
+                    }
+                    
+                }
+                if(Test.isRunningTest()){
+                    throw new DMLException();
+                }
+                
+                if(contactRec != NULL && contactRec.Id != NULL){
+                    update contactRec;
+                }
+                if(errorLogs.size()>0 && (csObj != NULL && csObj.P3_Enable_Mineral_Error_Logs__c)){
+                    insert errorLogs;                    
+                }
+            }catch(Exception e){
+                P3_AGIA_Mineral_Error_Log__c err = new P3_AGIA_Mineral_Error_Log__c();
+                err.Name ='MNRL-'+ Date.today();
+                err.P3_Integration__c = 'Mineral';
+                err.P3_Contact__c = c.Id;
+                err.P3_Error_Message__c = e.getMessage();
+                err.P3_Error_Summary__c = 'Contact Exception';
+                insert err;
+            }          
+        }
+    }
+    
+    public void finish(Database.BatchableContext bc){
+        System.debug('SyncContactMineralBatch Finish');
+        if(csObj != NULL && !(contactIdSet != NULL && contactIdSet.size()>0)){
+            csObj.P3_Mineral_Last_Synced__c = DateTime.now();
+            update csObj;
+        }
+    }
+    
+    //this method is for sending all types of request to mineral 
+    public HttpResponse sendRequestToMineral(String method, String userId, String body){
+        HttpRequest req = new HttpRequest();
+        HttpResponse res = new HttpResponse();
+        Http http = new Http();
+        req.setHeader('Content-Type', 'application/json');
+        req.setHeader( 'Accept', 'application/json' );
+        req.setHeader('Authorization','Bearer ' + this.accessToken);
+        if(userId != NULL)
+            req.setEndpoint(SyncAccountMineralBatch.ENDPOINT +'/users/'+userId);
+        else
+            req.setEndpoint(SyncAccountMineralBatch.ENDPOINT +'/users');
+        
+        if(body != NULL){
+            req.setBody(body);
+        }
+        req.setMethod(method);
+        req.setTimeout(120000);
+        if(!Test.isRunningTest())
+            res = Http.send(req);
+        else{
+            if(method =='POST')
+                res = HttpCalloutMockAGIAMineral.successResForMineralCreateContact();
+            else if(method!='PATCH' && method!='PUT')
+                res = HttpCalloutMockAGIAMineral.successResForMineralContact();
+            else
+                res = HttpCalloutMockAGIAMineral.failedResForMineralContact();
+        }
+        return res;
+    }
+    
+    //mark user as Active/Inactive 
+    public void setUserStatus(String userId, Boolean status, Id contactId){
+        HttpResponse res = new HttpResponse();
+        String body ='{"isActive": '+status+'}';
+        res = sendRequestToMineral('PATCH', userId, body);
+        P3_AGIA_Mineral_Error_Log__c err = createErrorLogs(res,contactId);
+        if(err != NULL)
+            errorLogs.add(err);
+    }
+    
+    //used to update user in Mineral
+    public void updateUserDetails(Contact c){
+        HttpResponse res = new HttpResponse();
+        UserDetailWrapper body = new UserDetailWrapper();
+        body.firstName = c.FirstName != NULL ? c.FirstName.trim() : NULL ;
+        body.lastName = c.LastName != NULL ? c.LastName.trim() : NULL ;
+        body.email =c.Email != NULL ? c.Email.trim() : NULL ;
+        body.companyName = c.Account.Name != NULL ? c.Account.Name.trim() : NULL ; 
+        if(c.Account.UST_ID__c != NULL){
+            body.companyName = body.companyName +' #'+c.Account.UST_ID__c;
+        }
+        body.jobTitle = c.Title != NULL ? c.Title.trim() : NULL ;
+        body.department = c.Department != NULL ? c.Department.trim() : NULL ; 
+        body.phone = c.Phone != NULL ? c.Phone.trim() : NULL ;         
+        res = sendRequestToMineral('PUT', c.P3_Mineral_User_Id__c, JSON.serialize(body));
+        P3_AGIA_Mineral_Error_Log__c err = createErrorLogs(res, c.Id);
+        if(err != NULL)
+            errorLogs.add(err);      
+    }
+    
+    //used to create user in Mineral
+    public void createUserMineral(Contact c){
+        UserDetailWrapper body = new UserDetailWrapper();
+        body.firstName = c.FirstName != NULL ? c.FirstName.trim() : NULL ;
+        body.lastName = c.LastName != NULL ? c.LastName.trim() : NULL ;
+        body.email =  c.Email != NULL ? c.Email.trim() : NULL ;
+        body.companyName =  c.Account.Name != NULL ? c.Account.Name.trim() : NULL ;
+        if(c.Account.UST_ID__c != NULL){
+            body.companyName = body.companyName +' #'+c.Account.UST_ID__c;
+        }
+        body.jobTitle =  c.Title != NULL ? c.Title.trim() : NULL ;
+        body.department = c.Department != NULL ? c.Department.trim() : NULL ;
+        body.phone = c.Phone != NULL ?  c.Phone.trim() : NULL ;
+        
+        HttpResponse res = new HttpResponse();        
+        res = sendRequestToMineral('POST', NULL, JSON.serialize(body));
+        if(res.getStatusCode()==201){  
+            UserStatusResponseWrapper w =(UserStatusResponseWrapper)JSON.deserialize(res.getBody(), UserStatusResponseWrapper.class);
+            c.P3_Mineral_User_Id__c = String.valueOf(w.user.userId);
+            contactRec = c;          
+        }
+        P3_AGIA_Mineral_Error_Log__c err = createErrorLogs(res, c.Id);
+        if(err != NULL)
+            errorLogs.add(err);
+    }
+    
+    //used to create Error Logs
+    public P3_AGIA_Mineral_Error_Log__c createErrorLogs(HttpResponse res, Id contactId){
+       if(res.getStatusCode() == 404){
+            Map<String, String> msg = (Map<String,String>) JSON.deserialize(res.getBody(), Map<String,String>.class);
+            System.debug(msg);
+            if(msg.containskey('message')){
+                if(msg.get('message').contains('No inactive \'user\' record') || msg.get('message').contains('No active \'user\' record')){
+                    return null;
+                }
+            }
+        }
+        P3_AGIA_Mineral_Error_Log__c err = new P3_AGIA_Mineral_Error_Log__c();
+        err.Name ='MNRL-'+ Date.today();
+        err.P3_Contact__c = contactId;
+        err.P3_Integration__c = 'Mineral';
+        if(res.getBody().length()>254)
+            err.P3_Error_Message__c = res.getBody().subString(0,254);
+        else
+            err.P3_Error_Message__c = res.getBody();
+        err.P3_Error_Summary__c = res.getStatusCode()+' '+res.getStatus();
+        return err;
+    }
+    
+    class UserDetailWrapper {
+        public String firstName;
+        public String lastName;
+        public String email;
+        public String companyName;
+        public String jobTitle;
+        public String department;
+        public String phone;
+        public String role;
+        public boolean sendMeCourseCompletion;
+        public UserDetailWrapper(){
+            this.role ='Company Admin';
+            this.sendMeCourseCompletion = true;
+        }
+    }
+    
+    class UserStatusResponseWrapper{
+        public User user;
+    }
+    
+    class User{
+        public Boolean isActive;
+        public Decimal userId;
+    }
+}

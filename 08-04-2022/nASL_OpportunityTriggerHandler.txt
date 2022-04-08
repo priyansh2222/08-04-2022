@@ -1,0 +1,157 @@
+/*
+@author --Cloud Certitude
+@date - 26 Aug 2021
+@description – ASLQSS1P_Anonymous Process on Account and Opportunity
+
+@author --Cloud Certitude
+@date -- 15 Feb 2022
+@description – Handle Membership Giving Type on Account
+*/
+
+public class ASL_OpportunityTriggerHandler {
+    public static void ASLQSS1P_updateAnonymousFields(List<Opportunity> newOppList, Map<Id,Opportunity> oldMapIdtoOpp){
+        Set<Id> accIdSet = new Set<Id>();
+        
+        for(Opportunity oppObj: newOppList){
+            Opportunity oldOpp = oldMapIdtoOpp != NULL? oldMapIdtoOpp.get(oppObj.Id): NULL;
+            
+            if(((oldOpp != NULL && oldOpp.StageName != oppObj.StageName)|| oldOpp == NULL) && (oppObj.StageName == 'Closed Won' || oppObj.StageName == 'Closed Lost')){
+                oppObj.ASL_Anonymous_Override__c = TRUE;
+                accIdSet.add(oppObj.AccountId);
+            }
+            if(((oldOpp != NULL && oldOpp.AccountId != oppObj.AccountId) || oldOpp == NULL) && oppObj.AccountId != NULL && !oppObj.ASL_Anonymous_Override__c){
+                accIdSet.add(oppObj.AccountId);
+            }
+        }
+        
+        if(!accIdSet.isEmpty()){
+            Map<Id,Account> accIdToAccount = new Map<Id,Account>([SELECT id,ASL_Anonymous__c,ASL_Anonymity_Details__c,ASL_Anonymous_Level__c FROM Account WHERE Id IN: accIdSet]);
+            if(accIdToAccount != NULL && accIdToAccount.size()>0){
+                for(Opportunity oppObj: newOppList){
+                    Account tempAcc = accIdToAccount.containsKey(oppObj.AccountId)? accIdToAccount.get(oppObj.AccountId): NULL;
+                    if(tempAcc != NULL){
+                        oppObj.ASL_Anonymous__c = accIdToAccount.get(oppObj.AccountId).ASL_Anonymous__c;
+                        oppObj.ASL_Anonymity_Details__c = accIdToAccount.get(oppObj.AccountId).ASL_Anonymity_Details__c;
+                        oppObj.ASL_Anonymous_Gift_Type__c = accIdToAccount.get(oppObj.AccountId).ASL_Anonymous_Level__c;
+                    }
+                }
+            }
+        }
+    } 
+    
+    public static void afterInsert(List<Opportunity> newOppList){
+        Boolean isMembershipGivingTypeTriggersOn = ASL_TriggerSettings__c.getValues('Membership Giving Type') != NULL && ASL_TriggerSettings__c.getValues('Membership Giving Type').Is_Active__c == true ? true: false; 
+        
+        if(isMembershipGivingTypeTriggersOn){
+            Id membershipOppRecordTypeId = Schema.SObjectType.Opportunity.getRecordTypeInfosByName().get('Membership').getRecordTypeId();
+            Set<Id> accIdSet = new Set<Id>();
+            
+            for(Opportunity opp: newOppList){
+                if(opp.RecordtypeId == membershipOppRecordTypeId){
+                    if(opp.AccountId != NULL)
+                        accIdSet.add(opp.AccountId);
+                }
+            }
+            
+            if(!accIdSet.isEmpty()){
+                populateMembershipGivingType(accIdSet);
+            }
+        }
+    }
+    
+    public static void beforeDelete(List<Opportunity> oldOppList){
+        Boolean isMembershipGivingTypeTriggersOn = ASL_TriggerSettings__c.getValues('Membership Giving Type') != NULL && ASL_TriggerSettings__c.getValues('Membership Giving Type').Is_Active__c == true ? true: false; 
+        
+        if(isMembershipGivingTypeTriggersOn){
+            Id membershipOppRecordTypeId = Schema.SObjectType.Opportunity.getRecordTypeInfosByName().get('Membership').getRecordTypeId();
+            Set<Id> accIdSet = new Set<Id>();
+            
+            for(Opportunity opp: oldOppList){
+                if(opp.RecordTypeId == membershipOppRecordTypeId && opp.AccountId != NULL){
+                    accIdSet.add(opp.AccountId);
+                }
+            }
+            
+            if(!accIdSet.isEmpty()){
+                populateMembershipGivingType(accIdSet);
+            }
+        }
+    }
+    
+    public static void afterUpdate(List<Opportunity> oppList, Map<Id,Opportunity> oldOppMap){
+        Boolean isMembershipGivingTypeTriggersOn = ASL_TriggerSettings__c.getValues('Membership Giving Type') != NULL && ASL_TriggerSettings__c.getValues('Membership Giving Type').Is_Active__c == true ? true: false; 
+        
+        Set<Id> accIdSet = new Set<Id>();
+        
+        for(Opportunity opp: oppList){
+            Opportunity oldOpp = oldOppMap.get(opp.Id);
+            if(isMembershipGivingTypeTriggersOn){
+                if(opp.RecordTypeId != oldOpp.RecordTypeId || opp.StageName != oldOpp.StageName){
+                    if(opp.AccountId != NULL){
+                        accIdSet.add(opp.AccountId);
+                    }
+                }
+            }
+        }    
+        
+        if(!accIdSet.isEmpty()){
+            populateMembershipGivingType(accIdSet);
+        }
+    }
+    
+    public static void populateMembershipGivingType(Set<Id> accIdSet){
+        List<FiscalYearSettings> fiscalYearSettings = [SELECT Id, StartDate, EndDate, Name, YearType FROM FiscalYearSettings WHERE StartDate <= TODAY AND EndDate >= TODAY];
+        if(fiscalYearSettings != NULL && fiscalYearSettings.size()>0){
+            Date fiscalStartDate = fiscalYearSettings[0].StartDate;
+            Date fiscalEndDate = fiscalYearSettings[0].EndDate;
+            Map<Id, Account> accMap = new Map<Id, Account>();
+            Map<Id, List<Opportunity>> accOppMap = new Map<Id, List<Opportunity>>();
+            
+            Id membershipOppRecordTypeId = Schema.SObjectType.Opportunity.getRecordTypeInfosByName().get('Membership').getRecordTypeId();
+            Boolean isRecurringOpp = FALSE;
+            List<Opportunity> oppList = [SELECT Id, RecordTypeId, AccountId, npe03__Recurring_Donation__c, npsp__Recurring_Donation_Installment_Name__c, npsp__Recurring_Donation_Installment_Number__c, StageName, (SELECT Id, npe01__Payment_Date__c, npe01__Paid__c FROM npe01__OppPayment__r WHERE npe01__Payment_Date__c >=: fiscalStartDate AND npe01__Payment_Date__c <=: fiscalEndDate AND npe01__Paid__c = TRUE) FROM Opportunity WHERE AccountId IN: accIdSet];
+            if(oppList != NULL){
+                for(Opportunity  opp: oppList){
+                    if(opp.npe01__OppPayment__r != NULL && opp.npe01__OppPayment__r.size()>0){
+                        Boolean isPaid = opp.npe01__OppPayment__r[0].npe01__Paid__c;
+                        List<Opportunity> tempOppList = new List<Opportunity>();
+                        isRecurringOpp = FALSE;
+                        
+                        if(opp.npe03__Recurring_Donation__c != NULL || opp.npsp__Recurring_Donation_Installment_Name__c != NULL || opp.npsp__Recurring_Donation_Installment_Number__c != NULL){
+                            isRecurringOpp = TRUE;
+                        }
+                        if(!isRecurringOpp){
+                            if(opp.RecordtypeId == membershipOppRecordTypeId && opp.StageName == 'Closed Won'){
+                                accMap.put(opp.AccountId, new Account(Id = opp.AccountId, ASL_Membership_Giving_Type__c = 'Single Gift Membership'));
+                            }
+                        } else if(opp.RecordtypeId == membershipOppRecordTypeId && opp.StageName == 'Closed Won'){
+                            accMap.put(opp.AccountId, new Account(Id = opp.AccountId, ASL_Membership_Giving_Type__c = 'Sustaining Member'));
+                        }
+                        if(opp.RecordtypeId != membershipOppRecordTypeId){
+                            if(accOppMap.containsKey(opp.AccountId)){
+                                tempOppList = accOppMap.get(opp.AccountId);
+                            }
+                            tempOppList.add(opp);
+                            accOppMap.put(opp.AccountId, tempOppList);
+                        }
+                    }
+                }
+                for(Opportunity  opp: oppList){
+                    if(accMap.containsKey(opp.AccountId) && accOppMap.containsKey(opp.AccountId)){
+                        //check if the Payment date is same for any opp, if yes - that would be Additional Gift
+                        for(Opportunity oppObj: accOppMap.get(opp.AccountId)){
+                            if(oppObj.npe01__OppPayment__r[0].npe01__Payment_Date__c == opp.npe01__OppPayment__r[0].npe01__Payment_Date__c){
+                                accMap.put(opp.AccountId, new Account(Id = opp.AccountId, ASL_Membership_Giving_Type__c = 'Single Membership and Additional Gift'));
+                            }                       
+                        }
+                    } else if(!accMap.containsKey(opp.AccountId)){
+                        accMap.put(opp.AccountId, new Account(Id = opp.AccountId, ASL_Membership_Giving_Type__c = NULL));
+                    }
+                }
+                if(!accMap.isEmpty()){
+                    update accMap.values();
+                }
+            }
+        }
+    }
+}

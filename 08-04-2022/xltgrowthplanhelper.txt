@@ -1,0 +1,59 @@
+({
+    printMonth : function(component, event, helper) {
+        var getMonthAction = component.get("c.getMonth");
+        
+        getMonthAction.setCallback(this,function(resp){
+            if(resp.getState() == "SUCCESS") {
+                component.set("v.months", resp.getReturnValue());
+            }
+        });
+        $A.enqueueAction(getMonthAction);       
+    } ,
+    
+    calcTotalEquitySources: function(cmp){
+        let commData = cmp.get("v.commitmentData");
+        let initialCashAvail = cmp.get("v.fundObj.Actual_Funds_Available__c") != null? cmp.get("v.fundObj.Actual_Funds_Available__c"): 0;
+        let totalEquitySourceArr = [];
+        
+        totalEquitySourceArr = [initialCashAvail,0,0,0,0,0]; //12 array size
+        
+        for (let comm of commData){
+            let amt = totalEquitySourceArr[comm.monthPosition - 1];
+            amt += comm.commitment.Allocated_Total_Commitment__c;
+            
+            totalEquitySourceArr[comm.monthPosition - 1] = amt;
+        }
+        cmp.set("v.totalEquitySources", totalEquitySourceArr);
+    },
+    
+    calcXLTCash: function(cmp){
+        let totalEquitySources = cmp.get("v.totalEquitySources");
+        let totalEquityUsage = cmp.get("v.totalEquityUsage");
+        let commData = cmp.get("v.commitmentData");
+        let totalEquitySourceDisp = [0,0,0,0,0,0];
+        let xltArr = [0,0,0,0,0,0];
+        let totalCashAvail = totalEquitySources[0] != null? totalEquitySources[0]: 0;
+        let equitySourceTotalCol = 0;
+        
+        for(let i=0; i<6; i++){
+            if(i==0){
+                xltArr[i] = totalEquitySources[i] - totalEquityUsage[i];
+                totalEquitySourceDisp[i] = totalEquitySources[i];
+            } else{
+                xltArr[i] = (xltArr[i-1] + totalEquitySources[i]) - totalEquityUsage[i];
+                totalCashAvail += xltArr[i-1];
+                totalEquitySourceDisp[i] = xltArr[i-1] + totalEquitySources[i];
+            }
+        }
+		
+        for(let idx in commData){
+            equitySourceTotalCol += commData[idx].commitment.Allocated_Total_Commitment__c;
+        }       
+        equitySourceTotalCol += totalCashAvail;
+        
+        cmp.set("v.xltCash", xltArr);
+        cmp.set("v.totalCashAvail", totalCashAvail);
+        cmp.set("v.totalEquitySourceDisplay", totalEquitySourceDisp);
+        cmp.set("v.equitySourceTotalColumn", equitySourceTotalCol);
+    }
+})

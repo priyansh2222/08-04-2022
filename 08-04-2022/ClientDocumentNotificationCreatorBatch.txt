@@ -1,0 +1,103 @@
+/*
+@author --Cloud Certitude
+@date - 05 April 2021
+@description – this batch generate client Document notifications for Every Client Document .
+*/
+public class ClientDocumentNotificationCreatorBatch implements Database.Batchable<Sobject>,Database.stateful{
+    public Set<Id> clientDocumentIdSet;  
+    Set<Id> directContactIdWithRURecTypeSet; //To Store direct Contact Id with Client document Type Of Reports and Update 
+    Set<Id> directContactIdWithTDRecTypeSet; //To Store direct Contact Id with Client document Type Of tax document 
+    public ClientDocumentNotificationCreatorBatch(Set<Id> clientDocumentIdSet){
+        if(clientDocumentIdSet != NULL && clientDocumentIdSet.size()>0){
+            this.clientDocumentIdSet = clientDocumentIdSet;
+        }else{
+            this.clientDocumentIdSet = new Set<Id>();
+        }
+        directContactIdWithRURecTypeSet = new Set<Id>();
+        directContactIdWithTDRecTypeSet = new Set<Id>();
+    }
+    
+    public Database.QueryLocator start(Database.BatchableContext bc) {
+        if(clientDocumentIdSet != NULL && clientDocumentIdSet.size()>0){
+            return Database.getQueryLocator([SELECT Id,RecordTypeId,Property_Fund__c FROM Client_Document__c where Id IN:clientDocumentIdSet]);
+        }
+        return NULL;
+    }
+    public void execute(Database.BatchableContext BC, list<Client_Document__c> listOfCD){
+        
+        String reportsAndUpdatesRecTypeId =  Schema.SObjectType.Client_Document__c.getRecordTypeInfosByName().get('Reports and Updates').getRecordTypeId();
+        String taxDocumentsRecTypeId =  Schema.SObjectType.Client_Document__c.getRecordTypeInfosByName().get('Tax Documents').getRecordTypeId();        
+        Client_Document__c clientDocument = listOfCD[0];
+        Set<Id> investorAccountIdSet = new Set<Id>();
+        Set<Id> contactIdSet = new Set<Id>();
+        Set<Client_Document_Notification__c> clientDocumentNotificationsSet = new Set<Client_Document_Notification__c>();
+        List<Client_Document_Notification__c> clientDocumentNotificationsList = new List<Client_Document_Notification__c>();
+        String investorAccRecType =  Schema.SObjectType.Account.getRecordTypeInfosByName().get('Investor').getRecordTypeId();
+        for(Holding__c holding : [Select Id,Investor__c,Holding_to_Fund__c from Holding__c where Holding_to_Fund__c =: clientDocument.Property_Fund__c AND Investor__c != NULL]){
+            investorAccountIdSet.add(holding.Investor__c);
+        }
+        if(investorAccountIdSet != NULL)
+            for(Contact c: [Select Id from Contact where AccountId IN:investorAccountIdSet]){
+                contactIdSet.add(c.Id);
+            }
+        if(contactIdSet != NULL){
+            for(AccountContactRelation acr : [Select Id ,AccountId,ContactId,Contact.Email from AccountContactRelation where ContactId IN:contactIdSet AND IsDirect = true AND AccountId IN: investorAccountIdSet]){
+                Client_Document_Notification__c cdn = new Client_Document_Notification__c();
+                cdn.Client_Document__c = clientDocument.Id;
+                cdn.Contact__c = acr.ContactId;
+                clientDocumentNotificationsSet.add(cdn);
+                if(clientDocument.RecordTypeId == reportsAndUpdatesRecTypeId){
+                    this.directContactIdWithRURecTypeSet.add(acr.ContactId);
+                }
+                if(clientDocument.RecordTypeId == taxDocumentsRecTypeId){
+                    this.directContactIdWithTDRecTypeSet.add(acr.ContactId);
+                }	              
+            }
+        }
+        System.debug(clientDocumentNotificationsSet.size());
+        System.debug(clientDocumentNotificationsSet);   
+        if(clientDocumentNotificationsSet.size()>0){
+            clientDocumentNotificationsList.addAll(clientDocumentNotificationsSet);
+            //insert clientDocumentNotificationsList;
+        }
+    }
+    public void finish(Database.BatchableContext BC){
+        List<Messaging.SingleEmailMessage> listOfMails = new List<Messaging.SingleEmailMessage>();
+        System.debug('Completed ClientDocumentNotificationCreatorBatch');
+        List<EmailTemplate> listOfEmailTempletes;        
+        if(this.directContactIdWithRURecTypeSet != NULL && this.directContactIdWithRURecTypeSet.size()>0){
+            System.debug('directContactIdWithRURecTypeSet-->'+this.directContactIdWithRURecTypeSet);
+            listOfEmailTempletes = [SELECT Id FROM EmailTemplate WHERE DeveloperName =:'Community_Project_Report_Document' limit 1];
+            for(Contact contactObj : [SELECT Id,Email FROM Contact where Id IN:this.directContactIdWithRURecTypeSet]){
+                Messaging.SingleEmailMessage mail = new Messaging.SingleEmailMessage();
+                mail.setTemplateID(listOfEmailTempletes[0].Id); 
+                mail.setTargetObjectId(contactObj.Id);
+                mail.setToAddresses(new List<String>{'priyansh.jaincloudcertitude@gmail.com'});
+                mail.setSaveAsActivity(false);
+                mail.setUseSignature(true);
+                mail.setWhatId('a0F8A000003WFvDUAW');
+                listOfMails.add(mail);
+            }
+        }
+        if(this.directContactIdWithTDRecTypeSet != NULL && this.directContactIdWithTDRecTypeSet.size()>0){
+             System.debug('directContactIdWithTDRecTypeSet-->'+this.directContactIdWithTDRecTypeSet);
+            listOfEmailTempletes = [SELECT Id FROM EmailTemplate WHERE DeveloperName =:'Community_Tax_Document' limit 1];
+            for(Contact contactObj : [SELECT Id,Email FROM Contact where Id IN:this.directContactIdWithTDRecTypeSet]){
+                Messaging.SingleEmailMessage mail = new Messaging.SingleEmailMessage();
+                mail.setTemplateID(listOfEmailTempletes[0].Id); 
+                mail.setTargetObjectId(contactObj.Id);
+                mail.setToAddresses(new List<String>{contactObj.Email});
+                //mail.setToAddresses(new List<String>{'priyansh.jaincloudcertitude@gmail.com'});
+                mail.setSaveAsActivity(false);
+                mail.setUseSignature(true);
+                mail.setWhatId('a0F8A000003WFvDUAW');
+                listOfMails.add(mail);
+            }
+        }
+        if(listOfMails!= NULL && listOfMails.size()>0){
+            System.debug(listOfMails);
+            //Messaging.SendEmailResult[] results = Messaging.sendEmail(new List<Messaging.SingleEmailMessage>{listOfMails[0]});
+            //Messaging.SendEmailResult[] results = Messaging.sendEmail(listOfMails);
+        }      
+    }    
+}

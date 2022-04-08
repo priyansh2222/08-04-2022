@@ -1,0 +1,10 @@
+trigger ContactTrigger2 on Contact (after insert, after update) {
+    if(trigger.isAfter){       
+        if(trigger.isInsert){
+            ContactTrigger2Helper.createContactMineralAGIA(trigger.new);
+        } else if (trigger.isUpdate && ContactTrigger2Helper.firstRun){
+            ContactTrigger2Helper.firstRun = FALSE;
+            ContactTrigger2Helper.updateContactMineralAGIA(trigger.new, trigger.oldMap);
+        }
+    }
+}

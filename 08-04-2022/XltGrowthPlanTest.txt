@@ -1,0 +1,68 @@
+@isTest 
+public class XltGrowthPlanTest 
+{
+    @testSetup 
+    public static void testXltPlanSetup(){
+        Account acc = new Account(Name = 'Test Acc');
+        insert acc;
+        
+        Contact con = new Contact(LastName = 'Test LastName', AccountId = acc.Id);
+        insert con;
+        
+        List<PropertiesFunds__c> fundList = new List<PropertiesFunds__c>();
+        PropertiesFunds__c p1 = new PropertiesFunds__c();
+        p1.Name = 'property1';
+        fundList.add(p1);
+        
+        PropertiesFunds__c p2 = new PropertiesFunds__c();
+        p2.Name = 'property2';
+        fundList.add(p2);
+        
+        insert fundList;
+        
+        //Creating commitment
+        Opportunity com = new Opportunity();
+        com.Name = 'commitment1';
+        com.Fund_Partnership__c = fundList[0].Id;
+        com.StageName = 'Funded';
+        com.CloseDate = system.today().addDays(-1);
+        com.First_Foundation__c = TRUE;
+        com.AccountId = acc.Id;
+        com.Contact_Name__c = con.Id;
+        insert com;
+        
+        //Create deal
+        List<Deal__c> testDealList = new List<Deal__c>();
+        for(Integer i=0;i<2;i++) {
+            testDealList.add(new Deal__c(Name = 'TestDeal'+i, Target_Fund__c = fundList[1].Id,Fund_Partnership__c = fundList[0].Id,Closing_Date__c = system.today().addDays(-1)));
+        }
+        insert testDealList;
+        
+    }
+    
+    @isTest 
+    public static void testGetFundAndYearData(){
+        PropertiesFunds__c p = [SELECT Id FROM PropertiesFunds__c WHERE Name = 'property1' LIMIT 1];
+        XltGrowthPlan.getFundAndYearData(p.Id);
+    }
+    
+    @isTest 
+    public static void testGetCommitmentData(){
+        PropertiesFunds__c p = [SELECT Id FROM PropertiesFunds__c WHERE Name = 'property1' LIMIT 1];
+        XltGrowthPlan.getCommitmentData(p.Id);
+    }
+    
+    @isTest 
+    public static void testCalcTotalEquityUses(){
+        PropertiesFunds__c p = [SELECT Id FROM PropertiesFunds__c WHERE Name = 'property1' LIMIT 1];
+        XltGrowthPlan.calcTotalEquityUses(p.Id);
+    }
+    
+    @isTest
+    public static void testGetMonth(){
+        XltGrowthPlan.getMonth();
+        for(integer i=1;i<=13;i++){
+            XltGrowthPlan.convertMonthIntegerToString(i);
+        }
+    }
+}

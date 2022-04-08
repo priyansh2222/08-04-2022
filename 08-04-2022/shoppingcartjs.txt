@@ -1,0 +1,116 @@
+import { LightningElement,track } from 'lwc';
+import { ShowToastEvent } from 'lightning/platformShowToastEvent';
+
+export default class MyShoopingCart extends LightningElement {
+@track products;
+@track cartProducts=[];
+@track showCart = false;
+@track showModal=false;
+@track item={title:'',categary:'',image:'',price:''};
+@track quantity=1;
+@track grandTotal=0;
+@track obj1 = true;
+@track hasProductInCart = false;
+connectedCallback(){
+    this.fetchProducts()
+}
+fetchProducts(){
+    fetch('https://fakestoreapi.com/products')
+        .then(res=>res.json())
+        .then(json=>{
+            console.log(json)
+            this.products = json;
+        }
+        )
+}
+onclickHandler(event){
+    console.log(event.target.value);
+    console.log(this.products[event.target.value]);
+ this.item = this.products[event.target.value];
+ this.showModal=true;
+}
+closeModal(){
+    this.showModal = false;
+    this.quantity =1;
+}
+removeQuantity(event){
+    this.quantity= this.quantity -1;
+    if(this.quantity == 0){
+        this.quantity = 1;
+    }
+}
+addQuantity(event){
+    this.quantity=this.quantity+1;
+}
+addProduct(event){
+    let obj = {data:this.item,quantity:1,totalAmount:this.item.price}
+    this.obj1 = true;
+    for(var i=0;i<this.cartProducts.length ;i++){
+        if(this.item == this.cartProducts[i].data){
+            this.cartProducts[i].quantity = this.cartProducts[i].quantity + this.quantity;
+            this.cartProducts[i].totalAmount = this.cartProducts[i].quantity * this.item.price;
+            this.obj1 = false;
+        }
+    }
+    console.log(this.obj1);
+    if(this.obj1 == true){
+        this.cartProducts.push(obj);
+
+    }
+    const toastEvent = new ShowToastEvent({
+        title: 'Success!!',
+        message: 'Product Added to Cart Successfully !!!!',
+        variant: 'success',
+        mode: 'dismissable'
+    });
+    this.dispatchEvent(toastEvent);
+    console.log(this.cartProducts);
+    this.doGrandTotal();
+    this.updatehasProductInCart();
+}
+showCartHandler(event){
+    this.showCart = true;
+    console.log(this.showCart);
+}
+hideCartHandler(event){
+    this.showCart = false;
+}
+onclickHandler2(event){
+    this.item = this.cartProducts[event.target.name].data;
+    this.showCart = false;
+    this.showModal = true;
+}
+doGrandTotal(){
+    this.grandTotal =0;
+    for(var i=0;i<this.cartProducts.length ;i++){
+          this.grandTotal =  this.grandTotal+ this.cartProducts[i].totalAmount ;
+          
+    }  
+    this.grandTotal= Math.round(this.grandTotal * 100) / 100;  
+}
+removeItemFromCart(event){
+    this.cartProducts.splice(event.target.value,1);
+    this.doGrandTotal();
+    this.updatehasProductInCart();
+    
+}
+updatehasProductInCart(){
+    if(this.cartProducts.length>0){
+        this.hasProductInCart = true;
+    }else{
+        this.hasProductInCart = false;
+    }
+}
+placeOrderHandler(event){
+    const toastEvent = new ShowToastEvent({
+        title: 'Success!!',
+        message: 'Your Order Has Placed Successfully !!!!',
+        variant: 'success',
+        mode: 'dismissable'
+    });
+    this.dispatchEvent(toastEvent);
+    this.showCart = false;
+    this.cartProducts =[];
+    this.updatehasProductInCart();
+}
+}

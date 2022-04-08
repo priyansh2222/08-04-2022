@@ -1,0 +1,58 @@
+/*
+* @author Michael Rucker 
+* @date 12/2020
+* @description This is the main trigger for Opportunity object
+* ASLQSS6P
+@author --Cloud Certitude
+@date -- 26 Aug 2021
+@description – ASLQSS1P_Anonymous Process on Account and Opportunity
+
+@author --Cloud Certitude
+@date -- 15 Feb 2022
+@description – Handle Membership Giving Type on Account
+*/
+
+trigger ASL_OpportunityTrigger on Opportunity (before insert, after insert, before update, after update, before delete, after delete) {
+    Boolean isAnonymousAutomationTriggersOn = ASL_TriggerSettings__c.getValues('Anonymous Automation') != NULL && ASL_TriggerSettings__c.getValues('Anonymous Automation').Is_Active__c == true ? true: false;
+    
+    Boolean isActive = [SELECT isActive__c FROM TriggerState__mdt where MasterLabel ='OpportunityTrigger'].isActive__c;
+    if(isActive) {
+        ASLQSS6P_OpportunityHandler handler = new ASLQSS6P_OpportunityHandler(Trigger.isExecuting, Trigger.size);
+        
+        if(Trigger.isBefore){
+            if(Trigger.isInsert || Trigger.isUpdate){
+                if(isAnonymousAutomationTriggersOn){
+                    ASL_OpportunityTriggerHandler.ASLQSS1P_updateAnonymousFields(trigger.new, trigger.oldMap);
+                }
+            } else if(Trigger.isDelete){
+                ASL_OpportunityTriggerHandler.beforeDelete(trigger.old);
+            }
+        }
+        else if(Trigger.isAfter){
+            if(Trigger.isInsert){
+                ASL_OpportunityTriggerHandler.afterInsert(trigger.new);
+            } else if(Trigger.isUpdate){
+                ASL_OpportunityTriggerHandler.afterUpdate(trigger.new,trigger.oldMap);                
+            }
+        }
+        //Handler for before insert
+        //handler.OnBeforeInsert(Trigger.new);     
+        /*else if(Trigger.isInsert && Trigger.isAfter){
+            //Handler for after insert
+            //handler.OnAfterInsert(Trigger.new);   
+            
+        } else if(Trigger.isBefore && Trigger.isUpdate){             
+            //Handler for before update trigger
+            //handler.OnBeforeUpdate(Trigger.oldMap, Trigger.newMap);     
+        } else*/ if(Trigger.isUpdate && Trigger.isAfter){   
+            //Handler for after update trigger
+            handler.OnAfterUpdate(Trigger.oldMap, Trigger.newMap);  
+        }
+        //} else if (Trigger.isDelete && Trigger.isBefore) {     
+        //Handler for before Delete trigger
+        //handler.OnBeforeDelete(Trigger.oldMap);    
+        //} else if (Trigger.isDelete && Trigger.isAfter) {     
+        //Handler for before Delete trigger
+        //handler.OnAfterDelete(Trigger.oldMap, Trigger.newMap);    
+    } 
+}

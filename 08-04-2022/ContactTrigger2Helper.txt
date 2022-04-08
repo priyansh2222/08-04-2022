@@ -1,0 +1,52 @@
+public class ContactTrigger2Helper {
+    public static Boolean firstRun = TRUE;
+    
+    public static void createContactMineralAGIA(List<Contact> listOfContact){
+        Set<Id> contactIdSetAGIA = new Set<Id>();
+        Set<Id> contactIdSetMineral = new Set<Id>();
+        
+        for(Contact contactObj: listOfContact){           
+            if(contactObj.P3_Sync_With_AGIA__c){
+                contactIdSetAGIA.add(contactObj.Id);
+            }     
+            
+            if(contactObj.P3_Sync_With_Mineral__c){
+                contactIdSetMineral.add(contactObj.Id);              
+            }            
+        }
+        if(contactIdSetAGIA.size()>0){
+            SyncContactAGIABatch contactAGIABatchObj = new SyncContactAGIABatch(contactIdSetAGIA);
+            Database.executeBatch(contactAGIABatchObj, 1);
+        }
+        if(contactIdSetMineral.size()>0){
+            SyncContactMineralBatch contactMineralBatchObj = new SyncContactMineralBatch(contactIdSetMineral);
+            Database.executeBatch(contactMineralBatchObj, 1);
+        }
+    }
+    
+    public static void updateContactMineralAGIA(List<Contact> listOfContact, Map<Id,Contact> oldMap){
+        Set<Id> contactIdSetAGIA = new Set<Id>();
+        Set<Id> contactIdSetMineral = new Set<Id>();
+        
+        for(Contact c: listOfContact){
+            Contact oldContact = oldMap.get(c.Id);
+            if((c.FirstName != oldContact.FirstName || c.LastName != oldContact.LastName || c.Email != oldContact.Email || c.P3_AGIA_Username__c != oldContact.P3_AGIA_Username__c  || c.Contact_Type__c != oldContact.Contact_Type__c ||  c.Status_All__c != oldContact.Status_All__c ||  c.AccountId != oldContact.AccountId) && c.P3_Sync_With_AGIA__c){               
+                contactIdSetAGIA.add(c.Id);
+            }
+            if((c.FirstName != oldMap.get(c.Id).FirstName || c.LastName != oldMap.get(c.Id).LastName || c.Email != oldMap.get(c.Id).Email || c.AccountId != oldMap.get(c.Id).AccountId || c.Title != oldMap.get(c.Id).Title || c.Department != oldMap.get(c.Id).Department || c.Phone != oldMap.get(c.Id).Phone  || c.Contact_Type__c != oldMap.get(c.Id).Contact_Type__c || c.ThinkHR_User__c != oldMap.get(c.Id).ThinkHR_User__c || c.Status_All__c != oldMap.get(c.Id).Status_All__c) && c.P3_Sync_With_Mineral__c){
+                contactIdSetMineral.add(c.Id); 
+            }
+        }
+        
+        if(contactIdSetAGIA.size()>0){
+            System.debug(contactIdSetAGIA);
+            SyncContactAGIABatch contactAGIABatchObj = new SyncContactAGIABatch(contactIdSetAGIA);
+            Database.executeBatch(contactAGIABatchObj, 1);
+        }
+        
+        if(contactIdSetMineral.size()>0){
+            SyncContactMineralBatch contactMineralBatchObj = new SyncContactMineralBatch(contactIdSetMineral);
+            Database.executeBatch(contactMineralBatchObj, 1);
+        }
+    }
+}

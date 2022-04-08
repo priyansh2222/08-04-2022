@@ -1,0 +1,57 @@
+@isTest
+public class SyncAccountMineralBatchTest {
+    @isTest public static void method1(){
+        P3_AGIA_Mineral_Integration__c cs = new P3_AGIA_Mineral_Integration__c();
+        cs.Name = 'AGIAMineralCredential';
+        cs.p3_AGIA_Company_Id__c = '1684948';
+        cs.P3_AGIA_Endpoint__c = 'https://stage-ust2.agia.com/api/jsonws';
+        cs.P3_AGIA_Password__c = 'sfapi_test';
+        cs.P3_AGIA_Username__c = 'sfapi_test';
+        cs.P3_Mineral_Client_Id__c = '42574eca';
+        cs.P3_Mineral_Client_Secret__c = 'bb038092b04ab12bf26c4e6f3eecbca0';
+        cs.P3_Mineral_Endpoint__c = 'https://restapis.alpha01.trustmineral-staging.com/v2';
+        cs.P3_Mineral_Password__c = 'Coconut-12';
+        cs.P3_Mineral_Username__c = 'donustsandbox';
+        cs.P3_Enable_Mineral_Error_Logs__c = True;
+        insert cs;
+        
+        String dummy = '{"Name": "testpp","Status_All__c": null,"Industry": "Agriculture","BillingStreet": "CC","BillingCity": "Miami","BillingState": "Florida","BillingPostalCode": "33129","UST_ID__c": null,"Phone": "555-555-8888"}';  
+        Account acc = (Account)json.deserialize(dummy, Account.class);       
+        acc.Product_Type__c ='Trust';
+        acc.Claims_Paid_By__c ='UST';
+        acc.P3_Mineral_Company_Id__c = '45685';
+        insert acc;
+        Account acc1 = (Account)json.deserialize(dummy, Account.class);
+        acc1.Name ='test';
+        acc1.Product_Type__c ='Trust';
+        acc1.Claims_Paid_By__c ='UST';
+        acc1.Status_All__c ='Active';
+        acc.P3_Mineral_Company_Id__c = '4566685';
+        insert acc1;
+        
+        Contact c = new Contact();
+        c.FirstName ='fname';
+        c.LastName ='lname';
+        c.Email ='a@gmail.com';
+        c.AccountId =acc.Id;
+         c.ThinkHR_User__c = true;
+        
+        insert c;
+        
+        HttpResponse res = new HttpResponse();
+        res.setStatusCode(200);
+        
+        Datetime yesterday = Datetime.now().addDays(-1);
+        Test.setCreatedDate(acc.Id, yesterday);  
+        Test.setCreatedDate(acc1.Id, yesterday);          
+        test.startTest();
+        Database.executeBatch(new SyncAccountMineralBatch());     
+        new SyncAccountMineralBatch().updateCompanyDetails(acc1);
+        new SyncAccountMineralBatch().createErrorLogs(res,acc.Id);
+        Database.executeBatch(new SyncAccountMineralBatch(new Set<ID>{acc.id,acc1.Id})); 
+       
+        test.stopTest();
+        acc.Status_All__c = 'RFQ';
+        update acc;
+    }
+}

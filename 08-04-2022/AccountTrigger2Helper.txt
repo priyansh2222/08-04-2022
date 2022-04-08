@@ -1,0 +1,44 @@
+public class AccountTrigger2Helper {
+    public static void syncAccountMineral(List<Account> listOfAccount, Map<Id, Account> oldMap){
+        Set<Id> accountIdSet = new Set<Id>();
+        Set<Id> accountIdSetAGIA = new Set<Id>();
+        for(Account acc: listOfAccount){
+            Account oldAcc = oldMap.get(acc.Id);         
+            //CR-21Mar2022: Add the field UST_Id__c to the evaluation of trigger.New and trigger.Old on the account trigger
+            if(acc.P3_Sync_With_Mineral__c && acc.P3_Mineral_Company_Id__c != NULL && (acc.UST_ID__c != oldAcc.UST_ID__c || acc.Name != oldAcc.Name || acc.Status_All__c != oldAcc.Status_All__c || acc.BillingStreet != oldAcc.BillingStreet || acc.BillingCity != oldAcc.BillingCity || acc.BillingState != oldAcc.BillingState || acc.BillingPostalCode != oldAcc.BillingPostalCode || acc.OwnerId != oldAcc.OwnerId || acc.Industry != oldAcc.Industry || acc.FTEs__c != oldAcc.FTEs__c || acc.P3_Mineral_Company_Id__c != oldAcc.P3_Mineral_Company_Id__c || acc.Phone != oldAcc.Phone)){
+                accountIdSet.add(acc.Id);
+            } 
+            if(acc.P3_Sync_With_AGIA__c && acc.Status_All__c != oldAcc.Status_All__c){
+                accountIdSetAGIA.add(acc.Id);
+            }
+        }        
+        if(accountIdSet.size()>0){
+            SyncAccountMineralBatch obj = new SyncAccountMineralBatch(accountIdSet);
+            Database.executeBatch(obj, 1);
+        }
+        if(accountIdSetAGIA.size() > 0){
+            Set<Id> contactIdSetAGIA = new Set<Id>();
+            //call AGIA Contact Batch to deactive Contacts
+            for(Contact contactObj: [SELECT Id, P3_Sync_With_AGIA__c FROM Contact WHERE AccountId IN: accountIdSetAGIA AND P3_Sync_With_AGIA__c = TRUE]){           
+                contactIdSetAGIA.add(contactObj.Id);              
+            }         
+            if(contactIdSetAGIA.size() > 0){
+                SyncContactAgiaBatch contactAGIABatchObj = new SyncContactAgiaBatch(contactIdSetAGIA);
+                Database.executeBatch(contactAGIABatchObj, 1);
+            }
+        }
+        
+    }
+    public static void afterInsert(List<Account> newAccounts){
+        Set<Id> accountIdSet = new Set<Id>();
+        for(Account acc : newAccounts){
+            if(acc.P3_Mineral_Company_Id__c != NULL ){
+                accountIdSet.add(acc.Id);
+            }
+        }
+        if(accountIdSet.size()>0){
+            SyncAccountMineralBatch obj = new SyncAccountMineralBatch(accountIdSet);
+            Database.executeBatch(obj, 1);
+        }
+    }
+}

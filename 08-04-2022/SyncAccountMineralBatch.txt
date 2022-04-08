@@ -1,0 +1,227 @@
+/*
+Name: SyncAccountMineralBatch
+Date: 20 Feb 2022
+Description: The batch syncs or deactivates Client in Mineral system based on Account in SF system. 
+*/
+
+public class SyncAccountMineralBatch implements Database.Batchable<Sobject>, Database.AllowsCallouts, Database.Stateful {
+    public static final String CLIENTID = P3_AGIA_Mineral_Integration__c.getAll().containsKey('AGIAMineralCredential') ? P3_AGIA_Mineral_Integration__c.getAll().get('AGIAMineralCredential').P3_Mineral_Client_Id__c : null ;
+    public static  final String CLIENTSECRET =  P3_AGIA_Mineral_Integration__c.getAll().containsKey('AGIAMineralCredential')  ? P3_AGIA_Mineral_Integration__c.getAll().get('AGIAMineralCredential').P3_Mineral_Client_Secret__c: null ;
+    public static final String USERNAME = P3_AGIA_Mineral_Integration__c.getAll().containsKey('AGIAMineralCredential')  ? P3_AGIA_Mineral_Integration__c.getAll().get('AGIAMineralCredential').P3_Mineral_Username__c: null ;
+    public static  final  String PASSWORD = P3_AGIA_Mineral_Integration__c.getAll().containsKey('AGIAMineralCredential')  ? P3_AGIA_Mineral_Integration__c.getAll().get('AGIAMineralCredential').P3_Mineral_Password__c: null ;
+    public static  final  String ENDPOINT = P3_AGIA_Mineral_Integration__c.getAll().containsKey('AGIAMineralCredential')  ?  P3_AGIA_Mineral_Integration__c.getAll().get('AGIAMineralCredential').P3_Mineral_Endpoint__c: null ;
+    public static  P3_AGIA_Mineral_Integration__c csObj = P3_AGIA_Mineral_Integration__c.getAll().containsKey('AGIAMineralCredential') ? P3_AGIA_Mineral_Integration__c.getAll().get('AGIAMineralCredential') : NULL;
+    public String accessToken;
+    public Set<Id> accountIdSet; 
+    public List<P3_AGIA_Mineral_Error_Log__c> errorLogs;
+    public Set<Id> inactiveAccIdSet;
+    
+    public SyncAccountMineralBatch(){
+        accountIdSet = new Set<Id>();
+        errorLogs = new List<P3_AGIA_Mineral_Error_Log__c>();
+        inactiveAccIdSet = new Set<Id>();
+    }
+    
+    public SyncAccountMineralBatch(Set<Id> accountIdSet){
+        this.accountIdSet = accountIdSet;
+        errorLogs = new List<P3_AGIA_Mineral_Error_Log__c>();
+        inactiveAccIdSet = new Set<Id>();
+    }
+    
+    public Database.QueryLocator start(Database.BatchableContext bc){
+        if(CLIENTID != NULL && CLIENTSECRET != NULL && ENDPOINT != NULL && USERNAME != NULL && PASSWORD != NULL){
+            if(accountIdSet == NULL || accountIdSet.size() == 0)
+                return Database.getQueryLocator([SELECT Id,Name, FTEs__c, P3_Mineral_Company_Id__c, Status_All__c, Industry, Owner.Name, BillingStreet, BillingCity, BillingState, BillingPostalCode, UST_ID__c, CreatedDate, LastModifiedDate, Phone FROM Account WHERE P3_Sync_With_Mineral__c = TRUE AND P3_Mineral_Company_Id__c != NULL AND (CreatedDate >= YESTERDAY OR LastModifiedDate >= YESTERDAY)]);
+            else
+                return Database.getQueryLocator([SELECT Id, Name, FTEs__c, P3_Mineral_Company_Id__c, Status_All__c, Industry, Owner.Name, BillingStreet, BillingCity, BillingState, BillingPostalCode, UST_ID__c, CreatedDate, LastModifiedDate, Phone FROM Account WHERE P3_Sync_With_Mineral__c = TRUE AND P3_Mineral_Company_Id__c != NULL AND Id IN: accountIdSet]);
+        } else {
+            return NULL;
+        }
+    }
+    
+    public void execute(Database.BatchableContext bc, List<Account> listOfAccounts){
+        errorLogs = new List<P3_AGIA_Mineral_Error_Log__c>();
+        
+        //listOfAccounts will always have one element - chunk size to be set to 1
+        if(listOfAccounts != NULL && listOfAccounts.size()>0){
+            Account acc = listOfAccounts[0];
+            this.accessToken =  getAccessTokenMineral();
+            try{
+                //Deactivate Account and all related Contacts
+                if(acc.Status_All__c != 'Active' && acc.Status_All__c != 'RFQ'){
+                    setCompanyStatus(FALSE, acc);
+                    inactiveAccIdSet.add(acc.Id);
+                } else {
+                    setCompanyStatus(TRUE, acc);
+                    updateCompanyDetails(acc); //Activate and Update Account
+                }
+                if(Test.isRunningTest()){
+                    throw new DMLException();
+                }
+                
+                if(errorLogs.size()>0 && ( csObj != NULL && csObj.P3_Enable_Mineral_Error_Logs__c)){
+                    insert errorLogs;
+                }
+            }catch(Exception e){
+                P3_AGIA_Mineral_Error_Log__c err = new P3_AGIA_Mineral_Error_Log__c();
+                err.Name ='MNRL-'+ Date.today();
+                err.P3_Integration__c = 'Mineral';
+                err.P3_Error_Message__c = e.getMessage();
+                err.P3_Error_Summary__c = 'Account Id -'+acc.Id;
+                insert err;
+            }
+        }
+    }
+    
+    public void finish(Database.BatchableContext bc){
+        if(inactiveAccIdSet != NULL && inactiveAccIdSet.size()>0){
+            System.debug(inactiveAccIdSet);
+            Set<Id> contactIdSetMineral = new Set<Id>();
+            //call Mineral Contact Batch to deactive Contacts
+            for(Contact contactObj: [SELECT Id, P3_Sync_With_Mineral__c FROM Contact WHERE AccountId IN: inactiveAccIdSet]){           
+                if(contactObj.P3_Sync_With_Mineral__c){
+                    contactIdSetMineral.add(contactObj.Id);              
+                }            
+            }            
+            
+            SyncContactMineralBatch contactMineralBatchObj = new SyncContactMineralBatch(contactIdSetMineral);
+            Database.executeBatch(contactMineralBatchObj, 1);
+        }
+    }
+    
+    //used for updating Company details.
+    public void updateCompanyDetails(Account acc){
+        CompanyDetailWrapper body = new CompanyDetailWrapper();
+        body.companyName = acc.Name != NULL? acc.Name.trim(): NULL;
+        if(acc.UST_ID__c != NULL){
+            body.companyName = body.companyName +' #'+acc.UST_ID__c;
+        }
+        body.displayName =acc.Name != NULL? acc.Name.trim(): NULL; 
+        body.industry = acc.Industry != NULL? acc.Industry.trim(): NULL;
+        body.producer =acc.Owner.Name!= NULL? acc.Owner.Name.trim(): NULL;
+        body.isActive = true;
+        body.location = new location ();              
+        body.location.address =acc.BillingStreet != NULL? acc.BillingStreet.trim(): NULL;    
+        body.location.zip =acc.BillingPostalCode != NULL? acc.BillingPostalCode.trim(): NULL; 
+        body.location.phone = acc.Phone != NULL? acc.Phone.trim(): NULL;      
+        body.location.employeeCount = acc.FTEs__c != NULL?  Integer.valueOf(acc.FTEs__c): NULL;
+        
+        System.debug(JSON.serialize(body, true));
+        HttpResponse res = new HttpResponse();
+        res = sendRequestToMineral('PUT', acc.P3_Mineral_Company_Id__c, JSON.serialize(body, true));
+        P3_AGIA_Mineral_Error_Log__c err = createErrorLogs(res, acc.Id);
+        if(err != NULL)
+        errorLogs.add(err);
+    }
+    
+    //used for setting Company status to Active or inActive
+    public void setCompanyStatus(Boolean status, Account acc){
+        HttpResponse res = new HttpResponse();
+        String body ='{"isActive": '+status+'}';
+        res = sendRequestToMineral('PATCH', acc.P3_Mineral_Company_Id__c, body);
+        P3_AGIA_Mineral_Error_Log__c err = createErrorLogs(res, acc.Id);
+        if(err != NULL )
+            errorLogs.add(err);  
+    }
+    
+    //this is a generic method for making web callouts to Mineral.
+    public HttpResponse sendRequestToMineral(String method, String companyId, String body){ 
+        HttpRequest req = new HttpRequest();
+        HttpResponse res = new HttpResponse();
+        Http http = new Http();
+        req.setHeader('Content-Type', 'application/json');
+        req.setHeader( 'Accept', 'application/json' );
+        req.setHeader('Authorization','Bearer ' + this.accessToken);
+        if(!Test.isRunningTest())
+            req.setEndpoint(ENDPOINT+'/companies/'+companyId);
+        if(body != null){
+            req.setBody(body);
+        }
+        req.setMethod(method);
+        req.setTimeout(120000);
+        if(!Test.isRunningTest())
+            res = Http.send(req);
+        else{
+            if(method == 'PATCH')
+                res = HttpCalloutMockAGIAMineral.failedResForSetStatusMineralAccount();
+            else if(method != 'PUT')
+                res = HttpCalloutMockAGIAMineral.successResForMineralAccount();
+            else
+                res = HttpCalloutMockAGIAMineral.failedResForMineralAccount();
+        }
+        return res;
+    }
+    
+    //this method is used to create and return Error Logs
+    public P3_AGIA_Mineral_Error_Log__c createErrorLogs(HttpResponse res, String accId){
+        System.debug(res.getBody());
+       if(res.getStatusCode() == 404){
+            Map<String, String> msg = (Map<String,String>) JSON.deserialize(res.getBody(), Map<String,String>.class);
+            System.debug(msg);
+            if(msg.containskey('message')){
+                if(msg.get('message').contains('No inactive \'company\' record') || msg.get('message').contains('No active \'company\' record')){
+                    return null;
+                }
+            }
+        }
+        P3_AGIA_Mineral_Error_Log__c err = new P3_AGIA_Mineral_Error_Log__c();
+        err.Name ='MNRL-'+ Date.today();
+        if(res.getStatusCode() == 200){ 
+            err.p3_Account__c = accId;
+        }        
+        err.P3_Integration__c = 'Mineral';
+        if(res.getBody().length()>254)
+            err.P3_Error_Message__c = res.getBody().subString(0,254);
+        else
+            err.P3_Error_Message__c = res.getBody();
+        err.P3_Error_Summary__c = res.getStatusCode()+' '+res.getStatus();
+        return err;
+    }
+    
+    //gives access token for mineral
+    public static String getAccessTokenMineral(){
+        Http http = new Http();
+        HttpRequest request = new HttpRequest();
+        request.setEndpoint(ENDPOINT+'/oauth/token');
+        request.setMethod('POST');
+        Blob headerValue = Blob.valueOf((String)CLIENTID + ':' + (String)CLIENTSECRET);
+        String authorizationHeader = 'BASIC ' + EncodingUtil.base64Encode(headerValue);
+        request.setHeader('Authorization', authorizationHeader);
+        String reqbody = 'grant_type=password&username='+USERNAME+'&password='+PASSWORD;
+        request.setBody(reqBody);
+        HttpResponse response;
+        if(!Test.isRunningTest()){
+            response = Http.send(request);
+        } else {
+            response = HttpCalloutMockAGIAMineral.fakeAccesstoken();
+        }
+        AccessTokenWrapper token = (AccessTokenWrapper)JSON.deserialize(response.getBody(), AccessTokenWrapper.class);
+        return token.access_token;
+    }
+    
+    class CompanyDetailWrapper{ 
+        public String companyName;
+        public String displayName;
+        public String industry;
+        public String role;
+        public String producer;
+        public Location location;
+        public Boolean isActive;
+    }
+    
+    class Location {
+        public String address;
+        public String phone;
+        public String zip;
+        public Integer employeeCount; 
+    }
+    class AccessTokenWrapper{
+        public String access_token;
+    }
+    class CompanyStatusResponseWrapper{ 
+        public Company company;
+    }
+    class Company{
+        public boolean isActive;
+    }
+}

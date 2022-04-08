@@ -1,0 +1,30 @@
+.THIS .headingText{
+    font-size: 24px;
+}
+
+.THIS .subText{
+    font-style: italic;
+}
+
+.THIS .tableHeader{
+    background-color:navy;
+    color:white;
+    font-size:15px;
+}
+
+.THIS .totalColumn{
+    background-color:gainsboro;
+}
+
+.THIS .rowHeader{
+    background-color:gainsboro;
+}
+
+.THIS .totalRow{
+    background-color:gainsboro;
+}
+
+.THIS .amountStyle{
+    text-align: right;
+    padding-right: 2px;
+}

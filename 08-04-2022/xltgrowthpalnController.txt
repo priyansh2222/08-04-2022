@@ -1,0 +1,47 @@
+({
+    doInit : function(component, event, helper) {
+        component.set("v.recordId",$A.get("$Label.c.XLTGrowthPlanRecId"));
+        var getFundAndYearAction = component.get("c.getFundAndYearData");
+        getFundAndYearAction.setParams({recordId:component.get("v.recordId")});
+        getFundAndYearAction.setCallback(this,function(resp){
+            if(resp.getState() == "SUCCESS") {
+                var respObj = resp.getReturnValue();
+                component.set("v.fundObj", respObj.fundRec);
+                component.set("v.currYear", respObj.currYear);
+                
+                var getCommitmentAction = component.get("c.getCommitmentData");
+                getCommitmentAction.setParams({recordId: component.get("v.recordId")});
+                getCommitmentAction.setCallback(this, function(commResp){
+                    if(commResp.getState() == "SUCCESS") {
+                        component.set("v.commitmentData", commResp.getReturnValue());
+                        helper.calcTotalEquitySources(component);
+                        
+                        var totalEquityUsesAction = component.get("c.calcTotalEquityUses");
+                        totalEquityUsesAction.setParams({ recordId:component.get("v.recordId") });
+                        totalEquityUsesAction.setCallback(this,function(equityUseResp){            
+                            if(equityUseResp.getState() == "SUCCESS") {	
+                                component.set("v.totalEquityUsage", equityUseResp.getReturnValue());
+                                helper.calcXLTCash(component);
+                            }
+                        });
+                        $A.enqueueAction(totalEquityUsesAction);
+                    }
+                });
+                $A.enqueueAction(getCommitmentAction);
+            }
+        });
+        $A.enqueueAction(getFundAndYearAction);
+        
+        helper.printMonth(component, event, helper);
+        
+        var dealDataAction = component.get("c.getDealData");
+        dealDataAction.setParams({recordId:component.get("v.recordId")});
+        dealDataAction.setCallback(this,function(resp){  
+            if(resp.getState() == "SUCCESS") {	
+                component.set("v.dealData", resp.getReturnValue());
+            }
+        });
+        $A.enqueueAction(dealDataAction);
+    }
+    
+})

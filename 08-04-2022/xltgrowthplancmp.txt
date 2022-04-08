@@ -1,0 +1,353 @@
+<aura:component controller="XltGrowthPlan" implements="force:appHostable,flexipage:availableForAllPageTypes,flexipage:availableForRecordHome,force:hasRecordId,force:lightningQuickAction" access="global">
+    <aura:attribute name="recordId" type="String" />
+    <aura:attribute name="fundObj" type="PropertiesFunds__c"/>
+    <aura:attribute name="currYear" type="String"/>
+    <aura:attribute name="months" type="String[]"/>
+    <aura:attribute name="commitmentData" type="XltGrowthPlan.WrapperXLT[]" />
+    <aura:attribute name="totalEquitySources" type="Decimal[]" />
+    <aura:attribute name="totalEquitySourceDisplay" type="Decimal[]" />
+    <aura:attribute name="dealData" type="XltGrowthPlan.WrapperXLT[]" />
+    <aura:attribute name="totalEquityUsage" type="Decimal[]" />
+    <aura:attribute name="xltCash" type="Decimal[]" />
+    <aura:attribute name="totalCashAvail" type="Decimal"/>
+    <aura:attribute name="equitySourceTotalColumn" type="Decimal"/>
+    
+    <aura:handler name="init" value="{!this}" action="{!c.doInit}"/>
+    
+    <div class="slds-box slds-theme_default" style="height:100%;width:100%;"> 
+        <table border="2" >
+            <tr>
+                <td colspan="16" class="headingText "><b>{!v.fundObj.Name}</b></td>
+            </tr>
+            <tr>
+                <td colspan="16" class="subText">Near Term {!v.currYear} Capital Sources &amp; Uses</td>          
+            </tr>
+            <tr class="tableHeader">
+                <td colspan="16"><b>Sources and Uses</b></td>
+            </tr>
+            <tr>
+                <td colspan="16" style="text-align:center;"><p><b>{!v.currYear} Remaining</b></p></td>
+            </tr>
+            <tr>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <aura:iteration items="{!v.months}" var="month" >
+                    <td style="text-align: center;"><p><b>{!month}</b></p></td>
+                </aura:iteration>
+                <td class="totalColumn" style="text-align:center;"><b>Total</b></td>
+            </tr>
+            <tr>
+               
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td colspan="6" style="text-align: center;"><p>$millions</p></td>
+                <td class="totalColumn"><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+            </tr>
+            
+            <tr>
+                <td class="rowHeader"><p><b>XLT Equity Sources</b></p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td class="totalColumn"><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+            </tr>
+            <tr>
+                <td><p>Cash Available for Investment</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td class="amountStyle">
+                    <aura:if isTrue="{!lessthan(v.fundObj.Actual_Funds_Available__c, 0)}">
+                        (<lightning:formattedNumber value="{!v.fundObj.Actual_Funds_Available__c}" style="currency" currencyCode="USD"/>)
+                        <aura:set attribute="else">
+                            <lightning:formattedNumber value="{!v.fundObj.Actual_Funds_Available__c}" style="currency" currencyCode="USD"/>
+                        </aura:set>
+                    </aura:if>
+                </td>
+                <aura:iteration items="{!v.xltCash}" var="cashAvail" indexVar="index">
+                    <aura:if isTrue="{!lessthan(index, 5)}">
+                        <td class="amountStyle">
+                            <aura:if isTrue="{!lessthan(cashAvail, 0)}">
+                                <p style="color:red;">(<lightning:formattedNumber value="{!neg(cashAvail)}" style="currency" currencyCode="USD"/>)</p>
+                                <aura:set attribute="else">
+                                    <lightning:formattedNumber value="{!cashAvail}" style="currency" currencyCode="USD"/>
+                                </aura:set>
+                            </aura:if>
+                        </td>
+                    </aura:if>
+                </aura:iteration>                
+                <td class="totalColumn amountStyle">
+                    <aura:if isTrue="{!lessthan(v.totalCashAvail, 0)}">
+                        <p style="color:red;">(<lightning:formattedNumber value="{!neg(v.totalCashAvail)}" style="currency" currencyCode="USD"/>)</p>
+                        <aura:set attribute="else">
+                            <lightning:formattedNumber value="{!v.totalCashAvail}" style="currency" currencyCode="USD"/>
+                        </aura:set>
+                    </aura:if>
+                </td>
+            </tr>
+            <tr>
+            <td><b>First Foundation</b></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td class="totalColumn"><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+            </tr>
+            <aura:iteration items="{!v.commitmentData}" var="item">
+                <tr>
+                    <td><p>{!item.commitment.Name}</p></td>
+                    <td><p></p></td>
+                    <td><p></p></td>
+                    
+                    <td class="amountStyle"><p><aura:if isTrue="{!item.monthPosition == 1}"> 
+                        <lightning:formattedNumber value="{!item.commitment.Allocated_Total_Commitment__c}" style="currency" currencyCode="USD"/>
+                        </aura:if></p></td>
+                    <td class="amountStyle"><p><aura:if isTrue="{!item.monthPosition == 2}">  
+                        <lightning:formattedNumber value="{!item.commitment.Allocated_Total_Commitment__c}" style="currency" currencyCode="USD"/></aura:if></p></td>
+                    <td class="amountStyle"><p><aura:if isTrue="{!item.monthPosition == 3}">  
+                        <lightning:formattedNumber value="{!item.commitment.Allocated_Total_Commitment__c}" style="currency" currencyCode="USD"/></aura:if></p></td>
+                    <td class="amountStyle"><p><aura:if isTrue="{!item.monthPosition == 4}">  
+                        <lightning:formattedNumber value="{!item.commitment.Allocated_Total_Commitment__c}" style="currency" currencyCode="USD"/></aura:if></p></td>
+                    <td class="amountStyle"><p><aura:if isTrue="{!item.monthPosition == 5}">  
+                        <lightning:formattedNumber value="{!item.commitment.Allocated_Total_Commitment__c}" style="currency" currencyCode="USD"/></aura:if></p></td>
+                    <td class="amountStyle"><p><aura:if isTrue="{!item.monthPosition == 6}">  
+                        <lightning:formattedNumber value="{!item.commitment.Allocated_Total_Commitment__c}" style="currency" currencyCode="USD"/></aura:if></p></td>
+                    <td class="totalColumn amountStyle"><p><lightning:formattedNumber value="{!item.commitment.Allocated_Total_Commitment__c}" style="currency" currencyCode="USD"/></p></td>
+                </tr>
+            </aura:iteration>
+            <!--<tr>
+                <td><p>Required Additional Cash (Equity)</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td class="totalColumn"><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+            </tr>-->
+            <tr class="totalRow">
+                <td><p><b>Total Equity Sources</b></p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <aura:iteration items="{!v.totalEquitySourceDisplay}" var="totalEquitySource">
+                    <td class="amountStyle">
+                        <b>
+                            <aura:if isTrue="{!lessthan(totalEquitySource, 0)}">
+                                <p style="color:red;">(<lightning:formattedNumber value="{!neg(totalEquitySource)}" style="currency" currencyCode="USD"/>)</p>
+                                <aura:set attribute="else">
+                                    <lightning:formattedNumber value="{!totalEquitySource}" style="currency" currencyCode="USD"/>
+                                </aura:set>
+                            </aura:if>
+                        </b>
+                    </td>
+                </aura:iteration>
+                <td class="totalColumn amountStyle">
+                    <b><aura:if isTrue="{!lessthan(v.equitySourceTotalColumn, 0)}">
+                        <p style="color:red;">(<lightning:formattedNumber value="{!neg(v.equitySourceTotalColumn)}" style="currency" currencyCode="USD"/>)</p>
+                        <aura:set attribute="else">
+                            <lightning:formattedNumber value="{!v.equitySourceTotalColumn}" style="currency" currencyCode="USD"/>
+                        </aura:set>
+                    </aura:if></b>
+                </td>
+            </tr>
+            <tr>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+               
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td class="totalColumn"><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+            </tr>
+            <tr>
+                <td class="rowHeader"><b>XLT Equity Uses</b></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+               
+                <td class="totalColumn"><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+            </tr>
+            <tr>
+                <td><u><b>Acquisitions Under PSA / LOI</b></u></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+               
+                <td class="totalColumn"><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+            </tr>
+            <aura:iteration items="{!v.dealData}" var="deal">
+                <tr>
+                    <td><u><b>{!deal.targetFund}</b></u></td>
+                    <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                    <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                    <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                    <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                    <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                    <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                    <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                    <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                   
+                    <td class="totalColumn"><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                </tr>
+                <aura:iteration items="{!deal.wrapperXLT}" var="item">
+                    <tr>
+                        <td><p>{!item.deal.Name}</p></td>
+                        <td><p>{!item.deal.City__c}</p></td>
+                        <td><p></p></td>
+                        <td class="amountStyle">
+                            <aura:if isTrue="{!item.monthPosition == 1}">  
+                                <lightning:formattedNumber value="{!item.deal.Xebec_Co_Invest__c}" style="currency" currencyCode="USD"/>
+                            </aura:if>
+                        </td>
+                        <td class="amountStyle">
+                            <aura:if isTrue="{!item.monthPosition == 2}">  
+                                <lightning:formattedNumber value="{!item.deal.Xebec_Co_Invest__c}" style="currency" currencyCode="USD"/>
+                            </aura:if>
+                        </td>
+                        <td class="amountStyle">
+                            <aura:if isTrue="{!item.monthPosition == 3}">  
+                                <lightning:formattedNumber value="{!item.deal.Xebec_Co_Invest__c}" style="currency" currencyCode="USD"/>
+                            </aura:if>
+                        </td>
+                        <td class="amountStyle">
+                            <aura:if isTrue="{!item.monthPosition == 4}">  
+                                <lightning:formattedNumber value="{!item.deal.Xebec_Co_Invest__c}" style="currency" currencyCode="USD"/>
+                            </aura:if>
+                        </td>
+                        <td class="amountStyle">
+                            <aura:if isTrue="{!item.monthPosition == 5}">  
+                                <lightning:formattedNumber value="{!item.deal.Xebec_Co_Invest__c}" style="currency" currencyCode="USD"/>
+                            </aura:if>
+                        </td>
+                        <td class="amountStyle">
+                            <aura:if isTrue="{!item.monthPosition == 6}">  
+                                <lightning:formattedNumber value="{!item.deal.Xebec_Co_Invest__c}" style="currency" currencyCode="USD"/>
+                            </aura:if>
+                        </td>
+                       
+                        <td class="totalColumn amountStyle">
+                            <lightning:formattedNumber value="{!item.deal.Xebec_Co_Invest__c}" style="currency" currencyCode="USD"/>
+                        </td>
+                    </tr>
+                </aura:iteration>
+                <tr class="totalRow">
+                    <td><b><i>Subtotal,  {!deal.targetFund}</i></b></td>
+                    <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                    <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                    <aura:iteration items="{!deal.targetFundSubtotal}" var="amount" indexVar="index">
+                        <td class="amountStyle"><b><lightning:formattedNumber value="{!amount}" style="currency" currencyCode="USD"/></b></td>
+                    </aura:iteration>
+                </tr>
+                <tr>
+                    <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                    <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                    <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                    <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                    <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                    <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                    <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                    <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                    
+                    <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                    <td class="totalColumn"><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                </tr>
+            </aura:iteration>
+            
+            <tr>
+                <td><b>SLR Investment</b></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+
+                <td class="totalColumn"><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+            </tr>
+            <tr>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+               
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td class="totalColumn"><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+            </tr>
+            <tr class="totalRow">
+                <td><b>XLT Cash</b></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <aura:iteration items="{!v.xltCash}" var="xltCashCol"> 
+                    <td class="amountStyle">
+                        <aura:if isTrue="{!lessthan(xltCashCol, 0)}">
+                            <p style="color:red;">(<lightning:formattedNumber value="{!neg(xltCashCol)}" style="currency" currencyCode="USD"/>)</p>
+                            <aura:set attribute="else">
+                                <lightning:formattedNumber value="{!xltCashCol}" style="currency" currencyCode="USD"/>
+                            </aura:set>
+                        </aura:if>
+                    </td>
+                </aura:iteration>
+                <td class="totalColumn"><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+            </tr>
+            <tr>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+               
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td class="totalColumn"><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+            </tr>
+            <tr class="totalRow">
+                <td><b>Total Equity Uses</b></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <td><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></td>
+                <aura:iteration items="{!v.totalEquityUsage}" var="amount">
+                    <td class="amountStyle"><b><lightning:formattedNumber value="{!amount}" style="currency" currencyCode="USD"/></b></td>
+                </aura:iteration>
+            </tr>
+        </table>
+    </div>    
+</aura:component>

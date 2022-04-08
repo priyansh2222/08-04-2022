@@ -1,0 +1,61 @@
+public class ClientDocumentTriggerHandler {
+    /*public static void createNotifications(list<Client_Document__c> docs){
+        system.debug('createNotifications');
+        // get the custom settings fro sending notifications
+        map<string,Client_Document_Notification_Settings__c> settings = new map<string,Client_Document_Notification_Settings__c>();
+        for(Client_Document_Notification_Settings__c setting : Client_Document_Notification_Settings__c.getAll().values()){
+            if(setting.Send_Email_Notification__c){
+            	settings.put(setting.Record_Type_Developer_Name__c, setting);
+            }
+        }
+        system.debug('settings ' + settings);
+        map<Id,string> toSendRTIDs = new map<Id,string>();
+        for(RecordType rt:[SELECT Id, DeveloperName FROM RecordType WHERE DeveloperName IN :settings.keySet() AND sObjectType = 'Client_Document__c']){
+            toSendRTIDs.put(rt.Id,rt.DeveloperName);
+        }
+        system.debug('toSendRTIDs ' + toSendRTIDs);
+        map<string,list<Client_Document__c>> toSend = new map<string,list<Client_Document__c>>();
+        for(Client_Document__c cd:docs){
+            if(toSendRTIDs.containsKey(cd.RecordTypeId)){
+                if(!toSend.containsKey(toSendRTIDs.get(cd.RecordTypeId))){
+                    toSend.put(toSendRTIDs.get(cd.RecordTypeId), new list<Client_Document__c>());
+                }
+                toSend.get(toSendRTIDs.get(cd.RecordTypeId)).add(cd);
+            }
+        }
+        system.debug('toSend ' + toSend);
+        if(!toSend.isEmpty()){
+            makeNotifications(toSend);
+        }
+    }
+    
+    public static void makeNotifications(map<string,list<Client_Document__c>> docs){
+        // for the types that get notifications created, send to their respective batch classes.
+        for(String s:docs.keySet()){
+            if(s.containsIgnoreCase(CommunityServices.DOC_TYPE_TAX_DOCUMENTS)){
+                TaxDocumentNotificationBatch b = new TaxDocumentNotificationBatch(docs.get(s));
+                Database.executeBatch(b, 1);
+            }
+            if(s.containsIgnoreCase(CommunityServices.DOC_TYPE_PROJECT_REPORTS)){
+                system.debug('creating project reports');
+                ProjectReportNotificationBatch b = new ProjectReportNotificationBatch(docs.get(s));
+                Database.executeBatch(b, 1);
+            }
+        }
+    }*/
+    
+    public static void makeClientDocumentNotifications(List<Client_Document__c> newDocsList){
+        String reportsAndUpdatesRecTypeId =  Schema.SObjectType.Client_Document__c.getRecordTypeInfosByName().get('Reports and Updates').getRecordTypeId();
+        String taxDocumentsRecTypeId =  Schema.SObjectType.Client_Document__c.getRecordTypeInfosByName().get('Tax Documents').getRecordTypeId();
+        Set<Id> setOfClientDocumentIds  = new Set<Id>();
+        for(Client_Document__c cd : newDocsList){
+            if((cd.RecordTypeId == reportsAndUpdatesRecTypeId || cd.RecordTypeId == taxDocumentsRecTypeId) && cd.Property_Fund__c != NULL){
+                setOfClientDocumentIds.add(cd.Id);
+            }
+        }
+        if(setOfClientDocumentIds.size()>0){
+            ClientDocumentNotificationCreatorBatch obj = new ClientDocumentNotificationCreatorBatch(setOfClientDocumentIds);
+            Database.executeBatch(obj);
+        }
+    }
+}

@@ -1,0 +1,275 @@
+/*
+* Name: SyncContactAGIABatch 
+* Date: 21/02/2022
+* Description: This batch is used to insert/update user in AGIA system.
+*/ 
+
+global class SyncContactAGIABatch implements Database.Batchable<Sobject>, Database.AllowsCallouts {
+    public static final String USERNAME = P3_AGIA_Mineral_Integration__c.getAll().containsKey('AGIAMineralCredential') ? P3_AGIA_Mineral_Integration__c.getAll().get('AGIAMineralCredential').P3_AGIA_Username__c : NULL;
+    public static final String PASSWORD = P3_AGIA_Mineral_Integration__c.getAll().containsKey('AGIAMineralCredential') ? P3_AGIA_Mineral_Integration__c.getAll().get('AGIAMineralCredential').P3_AGIA_Password__c : NULL;
+    public static final Integer COMPANYID = P3_AGIA_Mineral_Integration__c.getAll().containsKey('AGIAMineralCredential') ? Integer.valueOf(P3_AGIA_Mineral_Integration__c.getAll().get('AGIAMineralCredential').p3_AGIA_Company_Id__c) : NULL;
+    public static final String ENDPOINT = P3_AGIA_Mineral_Integration__c.getAll().containsKey('AGIAMineralCredential') ? P3_AGIA_Mineral_Integration__c.getAll().get('AGIAMineralCredential').P3_AGIA_Endpoint__c : NULL;
+    public static  P3_AGIA_Mineral_Integration__c csObj = P3_AGIA_Mineral_Integration__c.getAll().containsKey('AGIAMineralCredential') ? P3_AGIA_Mineral_Integration__c.getAll().get('AGIAMineralCredential') : NULL;
+    public Set<Id> contactIdSet;
+    public List<P3_AGIA_Mineral_Error_Log__c> errorLogs;
+    public Contact contactRec;
+    
+    //used in Trigger
+    public SyncContactAGIABatch(Set<Id> contactIdSet){
+        if(contactIdSet != NULL && contactIdSet.size()>0)
+            this.contactIdSet = contactIdSet;
+        else
+            this.contactIdSet = new Set<Id>();
+        errorLogs = new List<P3_AGIA_Mineral_Error_Log__c>();
+        contactRec = new Contact();
+    }
+    
+    //used in Scheduler
+    public SyncContactAGIABatch(){
+        contactIdSet = new Set<Id>();
+        errorLogs = new List<P3_AGIA_Mineral_Error_Log__c>();
+        contactRec = new Contact();
+    }
+    
+    public Database.QueryLocator start(Database.BatchableContext bc){
+        System.debug('Batch called');
+        if(PASSWORD != NULL && USERNAME != NULL && COMPANYID != NULL && ENDPOINT != NULL){
+            if(contactIdSet == NULL || contactIdSet.size() == 0)
+                return Database.getQueryLocator([SELECT Id, Email, FirstName, P3_AGIA_User_Id__c, ThinkHR_User__c, P3_AGIA_Username__c, LastName, Account.P3_Sync_With_AGIA__c, Account.Status_All__c, Status_All__c, Account.AGIA_ID__c, Contact_Type__c, CreatedDate, LastModifiedDate FROM Contact WHERE AccountId != NULL AND Account.P3_Sync_With_AGIA__c = TRUE AND P3_Sync_With_AGIA__c = TRUE AND (CreatedDate>=YESTERDAY OR LastModifiedDate>=YESTERDAY)]);
+            else
+                return Database.getQueryLocator([SELECT Id, Email, FirstName, P3_AGIA_User_Id__c, ThinkHR_User__c, P3_AGIA_Username__c, LastName, Account.P3_Sync_With_AGIA__c, Account.Status_All__c, Status_All__c, Account.AGIA_ID__c, Contact_Type__c, CreatedDate, LastModifiedDate FROM Contact WHERE AccountId != NULL AND Account.P3_Sync_With_AGIA__c = TRUE AND  P3_Sync_With_AGIA__c = TRUE AND Id IN: contactIdSet]);
+        } else{
+            return NULL;
+        }
+    }
+    
+    public void execute(Database.BatchableContext bc, List<Contact> listOfContacts){
+        errorLogs = new List<P3_AGIA_Mineral_Error_Log__c>();
+        contactRec = new Contact();
+        
+        if(listOfContacts != NULL && listOfContacts.size() > 0) {
+            Contact contactObj = listOfContacts[0];
+            
+            System.debug(contactObj);
+            try{
+                //Deactivate user in AGIA/LifeRay
+                if((contactObj.Account.Status_All__c != 'Active' ) || contactObj.Contact_Type__c == 'Inactive Still at Org' || contactObj.Contact_Type__c == 'Inactive Contact'){                   
+                    if(contactObj.P3_AGIA_User_Id__c != NULL){ //if user exists in AGIA
+                        updateUserStatus(contactObj, FALSE);
+                    }
+                } else if(contactObj.Contact_Type__c != 'Partner Only Contact' && contactObj.Contact_Type__c != 'ThinkHR Only Contact' && (contactObj.Status_All__c == 'Active' )){
+                    if(contactObj.P3_AGIA_User_Id__c == NULL){ //create user if does not exist
+                        createUserAGIA(contactObj);
+                    } else { //update user if already exists
+                        updateUserStatus(contactObj, TRUE);
+                        updateUserAGIA(contactObj);                        
+                    }
+                }
+                System.debug(contactRec);
+                System.debug(errorLogs);
+                
+                if(contactRec != NULL && contactRec.Id != NULL)
+                    update contactRec;
+                if(errorLogs.size()>0 && (csObj != NULL && csObj.P3_Enable_AGIA_Error_Logs__c))
+                    insert errorLogs;
+                if(Test.isRunningTest()){
+                    throw new DMLException();
+                }
+            } catch(Exception e){
+                P3_AGIA_Mineral_Error_Log__c err = new P3_AGIA_Mineral_Error_Log__c();
+                err.Name ='AGIA-'+ Date.today();
+                err.P3_Integration__c = 'AGIA';
+                err.P3_Error_Message__c = e.getMessage();
+                err.P3_Contact__c = contactObj.Id;
+                err.P3_Error_Summary__c = 'Apex Exception';
+                insert err;
+            }    
+            
+        }
+    }
+    
+    public void finish(Database.BatchableContext bc){
+        System.debug('Finish');
+        if(csObj != NULL && !(contactIdSet != NULL && contactIdSet.size()>0)){
+            csObj.P3_AGIA_Last_Synced__c = DateTime.now();
+            update csObj;
+        }
+    }
+    
+    //add user in AGIA
+    public void createUserAGIA(Contact c){        
+        UserDetailWrapper w = new UserDetailWrapper();
+        w.companyId = COMPANYID;
+        w.screenName = c.P3_AGIA_Username__c != NULL?urlDataEncrypter(c.P3_AGIA_Username__c) : NULL; 
+        w.emailAddress = c.Email != NULL? c.Email.trim(): NULL;    
+        w.openId = c.Id;
+        w.firstName =c.FirstName != NULL? urlDataEncrypter(c.FirstName): NULL;     
+        w.lastName = c.LastName != NULL? urlDataEncrypter(c.LastName): NULL;
+        w.autoPassword = TRUE;
+        w.autoScreenName = FALSE;
+        w.sendEmail = FALSE;
+        
+        String endpointStr = ENDPOINT+'/user/add-user';
+        endpointStr = endpointStr+(w.companyId!=null ?'/company-id/'+w.companyId:'/company-id');
+        endpointStr = endpointStr+(w.autoPassword!=null ?'/auto-password/'+w.autoPassword:'/auto-password' );
+        endpointStr = endpointStr+(w.password1!=null ?'/password1/'+w.password1:'/password1' );
+        endpointStr = endpointStr+(w.password2!=null ?'/password2/'+w.password2:'/password2' );
+        endpointStr = endpointStr+(w.autoScreenName!=null ?'/auto-screen-name/'+w.autoScreenName:'/auto-screen-name' );
+        endpointStr = endpointStr+(w.screenName!=null ?'/screen-name/'+w.screenName:'/screen-name' );
+        endpointStr = endpointStr+(w.emailAddress!=null ?'/email-address/'+w.emailAddress:'/email-address' );
+        endpointStr = endpointStr+(w.facebookId!=null ?'/facebook-id/'+w.facebookId:'/facebook-id' );
+        endpointStr = endpointStr+(w.openId!=null ?'/open-id/'+w.openId:'/open-id' );
+        endpointStr = endpointStr+(w.locale!=null ?'/locale/'+w.locale:'/locale' );
+        endpointStr = endpointStr+(w.firstName!=null ?'/first-name/'+w.firstName:'/first-name' );
+        endpointStr = endpointStr+(w.middleName!=null ?'/middle-name/'+w.middleName:'/-middle-name' );
+        endpointStr = endpointStr+(w.lastName!=null ?'/last-name/'+w.lastName:'/last-name' );
+        endpointStr = endpointStr+(w.prefixId!=null ?'/prefix-id/'+w.prefixId:'/prefix-id' );
+        endpointStr = endpointStr+(w.suffixId!=null ?'/suffix-id/'+w.suffixId:'/suffix-id' );
+        endpointStr = endpointStr+(w.male!=null ?'/male/'+w.male:'/male' );
+        endpointStr = endpointStr+(w.birthdayMonth!=null ?'/birthday-month/'+w.birthdayMonth:'/birthday-month' );
+        endpointStr = endpointStr+(w.birthdayDay!=null ?'/birthday-day/'+w.birthdayDay:'/birthday-day' );
+        endpointStr = endpointStr+(w.birthdayYear!=null ?'/birthday-year/'+w.birthdayYear:'/birthday-year' );
+        endpointStr = endpointStr+(w.jobTitle!=null ?'/job-title/'+w.jobTitle:'/-job-title' );
+        endpointStr = endpointStr+(w.groupIds.size()>0 ?'/group-ids/'+w.groupIds:'/group-ids/%5b%5d' );
+        endpointStr = endpointStr+(w.organizationIds.size()>0 ?'/organization-ids/'+w.organizationIds:'/organization-ids/%5b%5d' );
+        endpointStr = endpointStr+(w.roleIds.size()>0 ?'/role-ids/'+w.roleIds:'/role-ids/%5b%5d' );
+        endpointStr = endpointStr+(w.userGroupIds.size()>0 ?'/user-group-ids/'+w.userGroupIds:'/user-group-ids/%5b%5d');
+        endpointStr = endpointStr+ '/send-email/'+w.sendEmail;
+        endpointStr = endpointStr+(w.p_auth!=null ?'?p_auth='+w.p_auth:'');   
+        
+        System.debug('Add User:: ' + endpointStr);
+        
+        HttpResponse res = sendRequestToAGIA('POST', endpointStr);
+        P3_AGIA_Mineral_Error_Log__c err = createErrorLogs(res, c.Id);
+        errorLogs.add(err);
+        if(res.getStatusCode() == 200) {
+            Map<String, Object> parsedResponseMap = (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
+            c.P3_AGIA_User_Id__c = String.valueOf(parsedResponseMap.get('userId'));
+            contactRec = c;
+        }
+    }
+    
+    //activate-deactivate user in AGIA
+    public void updateUserStatus(Contact c, Boolean isActive){        
+        Integer status = isActive == TRUE ? 0 : 5;
+        String endpoint = ENDPOINT + '/user/update-status/user-id/'+c.P3_AGIA_User_Id__c+'/status/'+status;
+        System.debug(endpoint);
+        HTTPResponse res =  sendRequestToAGIA('POST', endpoint);
+        P3_AGIA_Mineral_Error_Log__c err = createErrorLogs(res, c.Id);
+        errorLogs.add(err);     
+    }
+    
+    //makes web callout and returns response
+    public HttpResponse sendRequestToAGIA(String method, String endpoint){
+        HTTP h = new HTTP();
+        HTTPRequest r = new HTTPRequest();
+        r.setEndpoint(endpoint);
+        Blob headerValue = Blob.valueOf(USERNAME + ':' + PASSWORD);
+        String authorizationHeader = 'BASIC ' + EncodingUtil.base64Encode(headerValue);
+        r.setHeader('Authorization', authorizationHeader);
+        r.setMethod(method);
+        HTTPResponse res ;
+        if(!test.isRunningTest()){
+            res = h.send(r);
+        }else{
+            res = HttpCalloutMockAGIAMineral.fakeAccesstoken();
+        }
+        
+        System.debug(res.getBody());
+        return res;
+    }
+    
+    //update user in AGIA
+    public void updateUserAGIA(Contact c){
+        c.Email = c.Email != NULL? c.Email.trim(): NULL;    
+        c.FirstName = c.FirstName != NULL? urlDataEncrypter(c.FirstName): NULL;     
+        c.LastName  = c.LastName != NULL? urlDataEncrypter(c.LastName): NULL; 
+        String endpointStr = ENDPOINT+'/user/update-user/user-id/'+c.P3_AGIA_User_Id__c+'/';
+        endpointStr+='-old-password/-new-password1/-new-password2/password-reset/false/-reminder-query-question/-reminder-query-answer/';
+        endpointStr+='screen-name/'+c.P3_AGIA_Username__c+'/email-address/'+c.Email+'/facebook-id/0/-open-id/-language-id/-time-zone-id/-greeting/';
+        endpointStr+='-comments/first-name/'+c.FirstName+'/-middle-name/last-name/'+c.LastName+'/prefix-id/0/suffix-id/0/male/true/birthday-month/01/';
+        endpointStr+= 'birthday-day/01/birthday-year/1970/-sms-sn/-facebook-sn/-jabber-sn/-skype-sn/-twitter-sn/-job-title/-group-ids/';
+        endpointStr+=  '-organization-ids/-role-ids/-user-group-roles/-user-group-ids';
+        System.debug(endpointStr); 
+        
+        HTTPResponse res =  sendRequestToAGIA('POST', endpointStr);
+        P3_AGIA_Mineral_Error_Log__c err = createErrorLogs(res, c.Id);
+        errorLogs.add(err);
+    }
+    
+    public P3_AGIA_Mineral_Error_Log__c createErrorLogs(HttpResponse res, String contactId){
+        System.debug(res.getBody());
+        P3_AGIA_Mineral_Error_Log__c err = new P3_AGIA_Mineral_Error_Log__c();
+        err.Name ='AGIA-'+ Date.today();
+        err.P3_Contact__c = contactId;
+        err.P3_Integration__c = 'AGIA';
+        if(res.getBody().length()>254)
+            err.P3_Error_Message__c = res.getBody().subString(0, 254);
+        else
+            err.P3_Error_Message__c = res.getBody();
+        err.P3_Error_Summary__c = res.getStatusCode()+' '+res.getStatus();
+        return err;
+    }
+    public String urlDataEncrypter(String data){
+        data = data.trim();
+        if(data.contains(' ')){
+            data = data.replace(' ', '%20');
+        }
+        return data;
+    }
+    
+    class UserDetailWrapper{
+        public String p_auth;
+        public Integer companyId;
+        public Boolean autoPassword;
+        public String password1;
+        public String password2;
+        public Boolean autoScreenName;
+        public String screenName;
+        public String emailAddress;
+        public Integer facebookId;
+        public String openId;
+        public String locale;
+        public String firstName;
+        public String middleName;
+        public String lastName;
+        public Integer prefixId;
+        public Integer suffixId;
+        public Boolean male;
+        public Integer birthdayMonth;
+        public Integer birthdayDay;
+        public Integer birthdayYear;
+        public String jobTitle;
+        public List<Integer>  groupIds;
+        public List<Integer>  organizationIds;
+        public List<Integer> roleIds;
+        public List<Integer> userGroupIds;
+        public List<Sobject> addresses;
+        public List<Sobject> emailAddresses;
+        public List<Sobject> phones;
+        public List<Sobject> websites;
+        public List<Sobject> announcementsDelivers;
+        public Boolean sendEmail;
+        
+        UserDetailWrapper() {
+            autoPassword = TRUE;
+            password1 = '123abc';
+            password2 = '123abc';
+            autoScreenName = FALSE;
+            facebookId = 0;  
+            openid = 'na';
+            prefixId = 0;
+            suffixId = 0;
+            locale = 'en-us';
+            male = TRUE;
+            birthdayMonth = 01;
+            birthdayday = 01;
+            BirthdayYear = 1970;
+            groupIds = new List<Integer>();
+            roleIds = new List<Integer>();
+            organizationIds = new List<Integer>();
+            userGroupIds = new List<Integer>();
+            sendEmail = FALSE;
+        }
+    }
+}

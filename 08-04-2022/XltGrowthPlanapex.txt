@@ -1,0 +1,179 @@
+public class XltGrowthPlan {
+    @AuraEnabled
+    public static FundWrapper getFundAndYearData(String recordId){
+        PropertiesFunds__c f = [SELECT Name, Actual_Funds_Available__c, Total_Amount_of_Active_Deals__c FROM PropertiesFunds__c WHERE Id =: recordId];
+        
+        FundWrapper fundWrap = new FundWrapper();
+        fundWrap.fundRec = f;
+        fundWrap.currYear = String.valueOf(System.today().year());
+        
+        return fundWrap;
+    }
+    
+    @AuraEnabled
+    public static List<WrapperXLT> getCommitmentData(String recordId){
+        Date currMonthStartDate = System.today().toStartOfMonth();       
+        Date lastMonthStartDate = currMonthStartDate.addMonths(11);
+        Integer numberDays = Date.daysInMonth(lastMonthStartDate.year(), lastMonthStartDate.month());
+        Date lastMonthEndDate = lastMonthStartDate.addDays(numberDays-1);
+        
+        List<WrapperXLT> wrList = new List<WrapperXLT>();
+        for(Opportunity comm : [SELECT Id, Name, Allocated_Total_Commitment__c, CloseDate FROM Opportunity WHERE Fund_Partnership__c =: recordId AND CloseDate != NULL AND First_Foundation__c = TRUE AND CloseDate>=:currMonthStartDate AND CloseDate<=:lastMonthEndDate]){
+            WrapperXLT wr = new WrapperXLT();
+            wr.commitment = comm;
+            
+            if(comm.CloseDate.month() == Date.today().month()) {
+                wr.monthPosition = 1;
+            } else if(comm.CloseDate.month() < Date.today().month()) {
+                wr.monthPosition = (7 - Date.Today().Month()) + comm.closeDate.month();
+            } else{
+                wr.monthPosition = comm.CloseDate.month() - Date.today().month() + 1;
+            }
+            wrList.add(wr);
+        }
+        return wrList;
+    }
+    
+    @AuraEnabled
+    public static List<DealWrapperXLT> getDealData(String recordId){
+        Date currMonthStartDate = System.today().toStartOfMonth();       
+        Date lastMonthStartDate = currMonthStartDate.addMonths(11);
+        Integer numberDays = Date.daysInMonth(lastMonthStartDate.year(), lastMonthStartDate.month());
+        Date lastMonthEndDate = lastMonthStartDate.addDays(numberDays-1);
+        
+        List<DealWrapperXLT> wrList = new List<DealWrapperXLT>();
+        Map<String, List<Deal__c>> mapTargetFundToDeals = new Map<String, List<Deal__c>>();
+        
+        for(Deal__c d: [SELECT Id, Name, City__c, Xebec_Co_Invest__c, Closing_Date__c, Target_Fund__c, Target_Fund__r.Name FROM Deal__c WHERE Fund_Partnership__c =: recordId AND Closing_Date__c != NULL AND Target_Fund__c != NULL AND Closing_Date__c >=: currMonthStartDate AND Closing_Date__c <=: lastMonthEndDate]){
+            List<Deal__c> dealList = new List<Deal__c>();
+            if(mapTargetFundToDeals.containsKey(d.Target_Fund__r.Name)){
+                dealList = mapTargetFundToDeals.get(d.Target_Fund__r.Name);
+            }
+            dealList.add(d);
+            mapTargetFundToDeals.put(d.Target_Fund__r.Name, dealList);
+        }
+        
+        for(String targetFundName: mapTargetFundToDeals.keySet()){
+            List<Decimal> targetFundSubtotal = new List<Decimal>{0,0,0,0,0,0,0}; //13 size of array
+            DealWrapperXLT dealWrap = new DealWrapperXLT();
+            dealWrap.targetFund = targetFundName;
+            List<WrapperXLT> dealList = new List<WrapperXLT>();
+            
+            for(Deal__c d: mapTargetFundToDeals.get(targetFundName)){
+                WrapperXLT w = new WrapperXLT();
+                w.deal = d;
+                if(d.Closing_Date__c.month() == Date.today().month()) {
+                    w.monthPosition = 1;
+                } else if(d.Closing_Date__c.month() < Date.today().month()) {
+                    w.monthPosition = (7-Date.today().month()) + d.Closing_Date__c.month() ;
+                } else{
+                    w.monthPosition = d.Closing_Date__c.month() - Date.Today().month() + 1;
+                }
+                dealList.add(w);
+                Decimal monthTotal = targetFundSubtotal.get(w.monthPosition - 1);
+                monthTotal += w.deal.Xebec_Co_Invest__c != NULL? w.deal.Xebec_Co_Invest__c: 0;
+                targetFundSubtotal.set(w.monthPosition - 1, monthTotal);
+            }  
+            dealWrap.wrapperXLT = dealList;
+            Decimal totalCol=0;
+            for(Integer i=0; i<6; i++){
+                totalCol += targetFundSubtotal[i];
+            }
+            targetFundSubtotal.set(6, totalCol);
+            dealWrap.targetFundSubtotal = targetFundSubtotal;
+            wrList.add(dealWrap);
+        }
+        
+        return wrList;
+    }
+    
+    @AuraEnabled
+    public static List<Decimal> calcTotalEquityUses(String recordId){
+        PropertiesFunds__c f = [SELECT Name, Actual_Funds_Available__c, Total_Amount_of_Active_Deals__c FROM PropertiesFunds__c WHERE Id =: recordId];
+        List<DealWrapperXLT> dealWrapList = getDealData(recordId);
+        List<Decimal> totalEquityUsage = new List<Decimal>{0,0,0,0,0,0,0}; //13 array size
+            for(DealWrapperXLT dealWrap: dealWrapList){
+                for(Integer i=0; i<7; i++){
+                    Decimal amt = totalEquityUsage.get(i);
+                    totalEquityUsage.set(i, amt + dealWrap.targetFundSubtotal[i]);
+                    //SLR Investment also to be added here later
+                }
+            }
+        totalEquityUsage.set(0, f.Total_Amount_of_Active_Deals__c);
+        return totalEquityUsage;
+    }
+    
+    @AuraEnabled
+    public static String convertMonthIntegerToString(Integer matrixMonth){
+        if(matrixMonth == 1){
+            return 'January'; 
+        }else if(matrixMonth == 2){
+            return 'February'; 
+        }else if(matrixMonth == 3){
+            return 'March';   
+        }else if(matrixMonth == 4){
+            return 'April';   
+        }else if(matrixMonth == 5){
+            return 'May';       
+        }else if(matrixMonth == 6){ 
+            return 'June';   
+        }else if(matrixMonth == 7){
+            return 'July';   
+        }else if(matrixMonth ==8){
+            return 'August';   
+        }else if(matrixMonth == 9){
+            return 'September';   
+        }else if(matrixMonth == 10){
+            return 'October';  
+        }else if(matrixMonth == 11){
+            return 'November';  
+        }else if(matrixMonth == 12){
+            return 'December';
+        } else {
+            return 'month end';
+        }
+    }
+    
+    @AuraEnabled
+    public static List<String> getMonth(){
+        List<String> monthSet = new List<String>();
+        Integer month = Date.today().month();
+        Integer yr = Date.today().year();
+        
+        for(Integer i=1; i<=6; i++) {
+            String m = convertMonthIntegerToString(month);
+            monthSet.add(m);
+            month++;
+            if(month == 13) {
+                month = 1;
+            }
+        }
+        return monthSet;
+    }
+    
+    class WrapperXLT{	
+        @AuraEnabled
+        public Opportunity commitment;
+        @AuraEnabled
+        public Deal__c deal;
+        @auraEnabled
+        public Integer monthPosition;
+    }
+     @TestVisible
+    class DealWrapperXLT{	
+        @AuraEnabled
+        public String targetFund;
+        @AuraEnabled
+        public List<WrapperXLT> wrapperXLT;
+        @AuraEnabled
+        public List<Decimal> targetFundSubtotal;
+        
+    }
+    @TestVisible
+    class FundWrapper{
+        @AuraEnabled
+        public PropertiesFunds__c fundRec;
+        @AuraEnabled
+        public String currYear;
+    }
+}

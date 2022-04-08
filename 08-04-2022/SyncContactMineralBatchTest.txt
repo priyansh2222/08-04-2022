@@ -1,0 +1,59 @@
+@isTest
+public class SyncContactMineralBatchTest {
+    @testSetup public static void main(){
+        P3_AGIA_Mineral_Integration__c cs = new P3_AGIA_Mineral_Integration__c();
+        cs.Name = 'AGIAMineralCredential';
+        cs.p3_AGIA_Company_Id__c = '1684948';
+        cs.P3_AGIA_Endpoint__c = 'https://stage-ust2.agia.com/api/jsonws';
+        cs.P3_AGIA_Password__c = 'sfapi_test';
+        cs.P3_AGIA_Username__c = 'sfapi_test';
+        cs.P3_Mineral_Client_Id__c = '42574eca';
+        cs.P3_Mineral_Client_Secret__c = 'bb038092b04ab12bf26c4e6f3eecbca0';
+        cs.P3_Mineral_Endpoint__c = 'https://restapis.alpha01.trustmineral-staging.com/v2';
+        cs.P3_Mineral_Password__c = 'Coconut-12';
+        cs.P3_Mineral_Username__c = 'donustsandbox';
+        insert cs;
+        String dummy = '{"Name": "testpp","Status_All__c": null,"Industry": "Agriculture","BillingStreet": "CC","BillingCity": "Miami","BillingState": "Florida","BillingPostalCode": "33129","UST_ID__c": null,"Phone": "555-555-8888"}';  
+        
+        Account acc1 = (Account)json.deserialize(dummy, Account.class);
+        acc1.Name ='test';
+        acc1.Product_Type__c ='Trust';
+        acc1.Claims_Paid_By__c ='UST';
+        acc1.Status_All__c ='Active';
+        acc1.AGIA_ID__c = '4566685';
+        acc1.P3_Mineral_Company_Id__c ='343';
+        insert acc1;
+        Datetime yesterday = Datetime.now().addDays(-5); 
+        Test.setCreatedDate(acc1.Id, yesterday);   
+        
+        
+        Contact c = new Contact();
+        c.FirstName ='fname';
+        c.LastName ='lname';
+        c.Email ='a@gmail.com';
+        c.AccountId =acc1.Id;
+        c.ThinkHR_User__c = true;        
+        insert c;
+        
+        yesterday = Datetime.now().addDays(-1); 
+        Test.setCreatedDate(acc1.Id, yesterday);  
+        Test.setCreatedDate(c.Id, yesterday);  
+        Test.startTest();
+        Database.executeBatch(new SyncContactMineralBatch(),1);  
+        new SyncContactMineralBatch().updateUserDetails(c);
+        new SyncContactMineralBatch().setUserStatus(c.P3_Mineral_User_Id__c,true,c.Id);
+        Database.executeBatch(new SyncContactMineralBatch(new Set<ID>())); 
+        Test.stopTest();
+    }
+    @isTest public static void method2(){
+         Account acc = [Select Id from Account limit 1];
+        Contact c = new Contact();
+        c.FirstName ='foname';
+        c.LastName ='loname';
+        c.Email ='a2@gmail.com';
+        c.AccountId =acc.Id;
+        c.P3_Mineral_User_Id__c = '353';
+        c.ThinkHR_User__c = true;        
+        insert c;
+    }
+}

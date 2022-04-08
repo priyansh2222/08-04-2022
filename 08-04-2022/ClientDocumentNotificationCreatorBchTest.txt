@@ -1,0 +1,54 @@
+@isTest public class ClientDocumentNotificationCreatorBchTest {
+    @testSetup public static void setupMethod(){
+        
+        Account acc = new Account(Name = 'Test Acc1');
+        insert acc;
+        
+        Account acc1 = new Account(Name = 'Test Acc2');
+        acc1.RecordTypeId = Schema.SObjectType.Account.getRecordTypeInfosByName().get('Investor').getRecordTypeId();
+        insert acc1;
+        
+        
+        Contact con = new Contact(LastName = 'Test LastName', AccountId = acc1.Id);
+        insert con;
+        
+        List<PropertiesFunds__c> fundList = new List<PropertiesFunds__c>();
+        PropertiesFunds__c p1 = new PropertiesFunds__c();
+        p1.Name = 'property1';
+        fundList.add(p1);
+        
+        PropertiesFunds__c p2 = new PropertiesFunds__c();
+        p2.Name = 'property2';
+        fundList.add(p2);
+        
+        insert fundList;
+        
+        Holding__c hold = new Holding__c(
+            Investor__c = acc1.Id,
+            Holding_to_Fund__c = fundList[0].Id,
+            Status__c = 'Requested',
+            Investment_Status_Value__c = 1
+        );
+        insert hold;
+        
+        String taxDocumentsRecTypeId =  Schema.SObjectType.Client_Document__c.getRecordTypeInfosByName().get('Tax Documents').getRecordTypeId();
+        Client_Document__c cd = new Client_Document__c();
+        cd.Property_Fund__c = fundList[0].Id;
+        cd.Name ='Test ';
+        cd.RecordTypeId = taxDocumentsRecTypeId;
+        cd.Year__c =2022;
+        insert cd;
+        
+        String reportsAndUpdatesRecTypeId =  Schema.SObjectType.Client_Document__c.getRecordTypeInfosByName().get('Reports and Updates').getRecordTypeId();
+        Client_Document__c cd1 = new Client_Document__c();
+        cd1.Property_Fund__c = fundList[0].Id;
+        cd1.Name ='Test 2';
+        cd1.RecordTypeId = reportsAndUpdatesRecTypeId;
+        cd1.Year__c =2022;
+        insert cd1;
+    }
+    @isTest public static void ClientDocumentNotificationCreatorBatchTest(){
+        List<Client_Document__c> listOfClientDocument = [SELECT Id from Client_Document__c];
+        Database.executeBatch(new ClientDocumentNotificationCreatorBatch(new Set<Id>{listOfClientDocument[0].Id}),1);
+    } 
+}

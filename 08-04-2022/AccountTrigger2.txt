@@ -1,0 +1,10 @@
+trigger AccountTrigger2 on Account (after update,after Insert) {
+    if(trigger.isAfter){       
+        if(trigger.isUpdate){
+            AccountTrigger2Helper.syncAccountMineral(trigger.new,trigger.oldMap);
+        }
+        if(trigger.isInsert){
+            AccountTrigger2Helper.afterInsert(trigger.new);
+        }
+    }
+}
